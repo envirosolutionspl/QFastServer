@@ -121,47 +121,69 @@ written with the assistance of an AI coding agent, which the QGIS contribution p
 
 ## Measurements
 
-The official image `qgis/qgis-server:3.44.15-noble` against the QFastServer image built from it with
-`docker/build.sh 3.44.15`. Both are started the same way: the nginx front of the image, 4 FastCGI workers,
-parallel rendering off, 4 CPUs and 4 GB of memory for the container, PostGIS 16 in another container on the
-same host. Load generated with k6: median response time with one client, requests per second with 16 clients,
-two runs of 8 s for each image and each cell, the images alternating. No failed responses in any run.
+The published image of QFastServer 3.44.15-qfs.1 against the official image `qgis/qgis-server:3.44.15-noble`,
+MapServer 8.6 and GeoServer 3.0.2. Each server runs alone in a container with 4 CPUs and 4 GB of memory;
+QGIS Server, QFastServer and MapServer with 4 FastCGI workers, GeoServer with 2 GB of heap; PostGIS 16 in
+another container on the same host. QGIS Server and QFastServer are started the same way (the nginx front of
+the image, parallel rendering off) with the same projects. Load generated with k6, 20 s for each cell after
+a warm-up.
 
-| Request | Median, 1 client | Requests/s, 16 clients |
-| --- | --- | --- |
-| Tile 256x256, 1 vector layer, PNG | 10.9 → 4.5 ms | 304 → 459 |
-| Tile 256x256, 3 vector layers, PNG | 11.0 → 7.9 ms | 222 → 271 |
-| Map 1024x768, 1 vector layer, PNG | 30.3 → 18.0 ms | 70 → 95 |
-| Map 1024x768, 3 vector layers, PNG | 44.6 → 27.5 ms | 42 → 57 |
-| Map 1024x768, raster in the layer CRS, JPEG | 17.8 → 10.1 ms | 198 → 301 |
-| Map 1024x768, raster reprojected, JPEG | 37.5 → 18.9 ms | 86 → 162 |
-| GetFeatureInfo, JSON | 11.0 → 3.7 ms | 374 → 871 |
-| GetLegendGraphic, PNG | 10.9 → 4.5 ms | 377 → 724 |
-| WMTS GetTile | 10.9 → 5.3 ms | 261 → 356 |
-| WFS GetFeature, GML, up to 2000 polygons | 44.6 → 37.0 ms | 57 → 74 |
-| Map 1024x768, 3 vector layers, 8 bits PNG | 37.2 → 35.9 ms | 45 → 47 |
+Cells: **median response time with one client in ms / requests per second with 16 clients**.
+
+| Request | QGIS Server | QFastServer | MapServer | GeoServer |
+| --- | --- | --- | --- | --- |
+| Tile 256x256, buildings, PNG | 10.9 / 317 | 4.1 / 463 | 6.0 / 322 | 5.8 / 340 |
+| Tile 256x256, 3 vector layers, PNG | 10.9 / 226 | 6.9 / 278 | 8.6 / 227 | 6.7 / 208 |
+| Map 1024x768, buildings, PNG | 28.5 / 73 | 16.6 / 99 | 26.7 / 93 | 16.0 / 51 |
+| Map 1024x768, 3 vector layers, PNG | 44.6 / 44 | 26.4 / 60 | 37.2 / 54 | 24.6 / 35 |
+| Map 1024x768, 4 vector layers with labels, PNG | 45.8 / 43 | 27.1 / 54 | 37.4 / 52 | 24.6 / 33 |
+| Map 1024x768, 3 vector layers reprojected to EPSG:2180, PNG | 50.0 / 36 | 28.6 / 46 | 41.6 / 45 | 59.1 / 6.6 |
+| Map 1024x768, 10 layers of a project with 200 layers, PNG | 52.5 / 36 | 33.7 / 45 | 50.3 / 33 | 27.3 / 36 |
+| Tile 256x256, raster in its CRS, JPEG | 10.8 / 377 | 2.5 / 1082 | 3.9 / 767 | 19.8 / 105 |
+| Map 1024x768, raster in its CRS, JPEG | 14.3 / 204 | 10.7 / 258 | 18.5 / 179 | 60.6 / 29 |
+| Map 1024x768, raster reprojected, JPEG | 38.1 / 81 | 20.7 / 143 | 17.5 / 166 | 206 / 8.1 |
+| Map 1024x768, raster reprojected under 3 vector layers, PNG | 100 / 21 | 51.2 / 45 | 59.4 / 37 | 279 / 4.6 |
+| Map 1024x768, cascaded WMS layer, PNG | 85.9 / 28 | 69.6 / 34 | 70.4 / 34 | 58.2 / 51 |
+| Map 1024x768, 3 vector layers, 8 bits PNG (1 client only) | 35.9 | 33.2 | 34.7 | 51.7 |
+| GetFeatureInfo, JSON | 10.8 / 378 | 3.3 / 916 | n/a | 4.7 / 629 |
+| GetLegendGraphic, PNG | 10.8 / 378 | 2.3 / 1375 | 2.9 / 986 | 0.9 / 2868 |
+| WFS GetFeature, GML, up to 2000 polygons | 41.8 / 60 | 34.0 / 77 | 20.4 / 160 | 28.6 / 79 |
+| WFS GetFeature, GeoJSON, up to 2000 polygons | 16.7 / 161 | 18.0 / 159 | 23.7 / 125 | 11.8 / 215 |
+| WMS GetCapabilities | 10.8 / 379 | 0.9 / 3169 | 3.6 / 803 | 27.6 / 104 |
+| WMTS GetTile | 10.9 / 288 | 5.0 / 370 | n/a | n/a |
 
 Machine: Intel Core Ultra 7 165H (16 cores, 22 threads), 31 GB of memory, Windows 11, Docker Engine 29.9 on
 WSL 2 (Linux 6.18), laptop on mains power. Data: an OpenStreetMap extract of one Polish region in PostGIS
-(land use, buildings, roads), a Sentinel-2 true colour image of 10980x10980 pixels as a deflate compressed
-GeoTIFF with overviews.
+(land use, buildings, roads, places), a Sentinel-2 true colour image of 10980x10980 pixels as a deflate
+compressed GeoTIFF with overviews.
 
-Measured with an unpatched and a patched build of the same source instead of the official image:
+All 52 kinds of requests, the set-up of every server, the start times, the memory use and the limits of the
+comparison: [benchmarks/3.44.15-qfs.1.md](benchmarks/3.44.15-qfs.1.md).
 
-- project with 200 PostGIS layers: four workers starting together load it in 1.0 s instead of 2.4 s; the
-  first GetCapabilities with `QGIS_SERVER_TRUST_LAYER_METADATA=true` takes 0.02 s instead of 3.2 s;
-- map of a raster in the layer CRS as PNG: 22 ms instead of 89 ms;
-- GetMap returning 2.9 MB of DXF, in-process: 40 ms instead of 52 ms.
+Against the official image, QFastServer has the lower median for 49 of the 52 kinds of requests and the
+higher throughput for 36 of 38. The few cells where it came out behind in this run were not confirmed as a regression by a
+second run with the two images alternating. It is not the fastest server everywhere: MapServer writes WFS
+responses as GML faster, GeoServer is faster with one client for vector maps of 1024x768 pixels and for WFS.
+
+Also measured:
+
+- project with 200 PostGIS layers and `QGIS_SERVER_TRUST_LAYER_METADATA=true`: the first GetCapabilities
+  takes 0.02 s instead of 3.3 s; four requests arriving at once right after the start are answered in 1.2 s
+  instead of 2.3 s;
+- GetMap returning 2.9 MB of DXF, in-process, with an unpatched and a patched build of the same source: 40 ms
+  instead of 52 ms.
 
 Not faster: GetPrint.
 
 What to keep in mind when reading these numbers:
 
-- They come from one machine and short runs. Differences below about 10% are not resolved by this set-up:
-  the 8 bits PNG row is within that noise (in-process, 24 different maps take 11% less time).
+- They come from one machine and one run. Differences below about 10% are not resolved by this set-up.
+- MapServer and GeoServer were not tuned beyond the set-up described in the benchmark document. Their
+  columns show the images as they come with the same resources, not the best these servers can do.
+- The styles were written by hand for every server; the images are not identical between the servers.
 - The image is built with the options of the upstream Debian packaging, but not by the build system of the
   official packages; the compiler flags may differ.
-- PNG files of vector maps are smaller than upstream (tiles 20.8 → 16.6 kB, maps of 3 layers 330 → 288 kB).
+- PNG files of vector maps are smaller than upstream (tiles 20.7 → 16.6 kB, maps of 3 layers 343 → 288 kB).
   PNG files of pure imagery (orthophotos) are about 20% larger, because rows are written without the
   expensive filter search.
 

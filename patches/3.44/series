@@ -1,0 +1,12 @@
+0001-server-Apply-the-project-cache-size-setting-to-the-c.patch
+0002-server-Restore-the-opacity-of-vector-tile-layers-aft.patch
+0003-server-Do-not-delay-short-FCGI-requests-in-the-socke.patch
+0004-server-Write-32-bits-PNG-images-with-libpng-without-.patch
+0005-postgres-Use-the-connection-pool-when-a-provider-is-.patch
+0006-Keep-the-extent-read-from-the-project-when-layers-ar.patch
+0007-server-Choose-the-PNG-row-filter-from-the-image-cont.patch
+0008-Speed-up-the-cell-loop-of-the-raster-projector.patch
+0009-Speed-up-the-no-data-test-of-8-bit-bands-in-the-mult.patch
+0010-gdal-Copy-the-cells-of-8-bit-bands-without-a-call-to.patch
+0011-server-Speed-up-the-conversion-of-WMS-images-to-8-bi.patch
+0012-server-Get-the-features-of-a-JSON-GetFeatureInfo-wit.patch

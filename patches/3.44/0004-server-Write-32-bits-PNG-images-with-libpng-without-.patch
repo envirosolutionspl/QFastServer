@@ -1,0 +1,285 @@
+From 71c998a3e25a138a7ba4c6eea61d95d41fe3f7be Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 09:40:38 +0100
+Subject: [PATCH 04/12] [server] Write 32 bits PNG images with libpng, without
+ row filtering
+
+WMS images in the default PNG format were written with QImage::save(), which uses the adaptive row filters of libpng and the default deflate level. For rendered maps the filters cost time and make the result larger, and the encoding took more than half of the time of a 1024x768 GetMap request.
+
+RGB32 and ARGB32 images are now written directly with libpng, with no row filter and deflate level 2. The decoded pixels are identical to the previous output; other PNG modes (8 bits, 16 bits, 1 bit) still use the writer of Qt.
+
+Measured with 4 FCGI workers on PostGIS layers, median of a 1024x768 GetMap with one client: 26.9 ms -> 14.0 ms (one layer) and 42.7 ms -> 24.8 ms (three layers); throughput with 16 clients +30 %; responses are 13 % smaller.
+
+diff --git a/src/server/services/wms/CMakeLists.txt b/src/server/services/wms/CMakeLists.txt
+index 63a7ff7b47..da68706de3 100644
+--- a/src/server/services/wms/CMakeLists.txt
++++ b/src/server/services/wms/CMakeLists.txt
+@@ -34,6 +34,8 @@ set (WMS_HDRS
+ ########################################################
+ # Build
+ 
++find_package(PNG REQUIRED)
++
+ set(_library_suffix_MODULE "")
+ set(_library_suffix_STATIC "_static")
+ 
+@@ -59,6 +61,7 @@ foreach(_library_type MODULE STATIC)
+   target_link_libraries(${_library_name}
+     qgis_core
+     qgis_server
++    PNG::PNG
+   )
+ endforeach()
+ 
+diff --git a/src/server/services/wms/qgswmsutils.cpp b/src/server/services/wms/qgswmsutils.cpp
+index 0f654bea20..50114cb962 100644
+--- a/src/server/services/wms/qgswmsutils.cpp
++++ b/src/server/services/wms/qgswmsutils.cpp
+@@ -21,6 +21,8 @@
+ 
+ #include <QRegularExpression>
+ 
++#include <png.h>
++
+ #include "qgsmodule.h"
+ #include "qgswmsutils.h"
+ #include "qgsmediancut.h"
+@@ -28,6 +30,99 @@
+ #include "qgswmsserviceexception.h"
+ #include "qgsproject.h"
+ 
++namespace
++{
++  void pngWriteCallback( png_structp png, png_bytep data, png_size_t length )
++  {
++    QIODevice *device = static_cast<QIODevice *>( png_get_io_ptr( png ) );
++    const qint64 size = static_cast<qint64>( length );
++    if ( device->write( reinterpret_cast<const char *>( data ), size ) != size )
++      png_error( png, "Write error" );
++  }
++
++  void pngFlushCallback( png_structp )
++  {
++  }
++
++  /**
++   * Writes a 32 bits \a image as PNG to \a device, without row filtering and with
++   * a low deflate level.
++   *
++   * For rendered maps this is several times faster than the PNG writer of Qt, which
++   * uses the adaptive row filters and the default deflate level, and the result is
++   * usually not larger. The decoded pixels are the same.
++   *
++   * Returns FALSE if the image could not be written, in particular when its format
++   * is not handled.
++   */
++  bool writeFastPng( QIODevice *device, const QImage &img )
++  {
++    QImage image = img;
++    bool hasAlpha = false;
++    switch ( image.format() )
++    {
++      case QImage::Format_RGB32:
++        break;
++      case QImage::Format_ARGB32:
++        hasAlpha = true;
++        break;
++      case QImage::Format_ARGB32_Premultiplied:
++        // same conversion as the one done by the PNG writer of Qt
++        image = image.convertToFormat( QImage::Format_ARGB32 );
++        hasAlpha = true;
++        break;
++      default:
++        return false;
++    }
++
++    png_structp png = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr );
++    if ( !png )
++      return false;
++
++    png_infop info = png_create_info_struct( png );
++    if ( !info )
++    {
++      png_destroy_write_struct( &png, nullptr );
++      return false;
++    }
++
++    // libpng jumps here on error
++    if ( setjmp( png_jmpbuf( png ) ) )
++    {
++      png_destroy_write_struct( &png, &info );
++      return false;
++    }
++
++    png_set_write_fn( png, device, pngWriteCallback, pngFlushCallback );
++    png_set_compression_level( png, 2 );
++    png_set_filter( png, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE );
++    png_set_IHDR( png, info, static_cast<png_uint_32>( image.width() ), static_cast<png_uint_32>( image.height() ), 8, hasAlpha ? PNG_COLOR_TYPE_RGB_ALPHA : PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
++    if ( image.dotsPerMeterX() > 0 || image.dotsPerMeterY() > 0 )
++      png_set_pHYs( png, info, static_cast<png_uint_32>( image.dotsPerMeterX() ), static_cast<png_uint_32>( image.dotsPerMeterY() ), PNG_RESOLUTION_METER );
++    png_write_info( png, info );
++
++    // pixels are stored as 0xAARRGGBB in the byte order of the host
++#if Q_BYTE_ORDER == Q_LITTLE_ENDIAN
++    png_set_bgr( png );
++    if ( !hasAlpha )
++      png_set_filler( png, 0, PNG_FILLER_AFTER );
++#else
++    if ( hasAlpha )
++      png_set_swap_alpha( png );
++    else
++      png_set_filler( png, 0, PNG_FILLER_BEFORE );
++#endif
++
++    const int height = image.height();
++    for ( int y = 0; y < height; ++y )
++      png_write_row( png, image.constScanLine( y ) );
++
++    png_write_end( png, info );
++    png_destroy_write_struct( &png, &info );
++    return true;
++  }
++} // namespace
++
+ namespace QgsWms
+ {
+   QString implementationVersion()
+@@ -167,7 +262,7 @@ namespace QgsWms
+       {
+         result.save( response.io(), qPrintable( saveFormat ), imageQuality );
+       }
+-      else
++      else if ( outputFormat != ImageOutputFormat::PNG || !writeFastPng( response.io(), result ) )
+       {
+         result.save( response.io(), qPrintable( saveFormat ) );
+       }
+diff --git a/tests/src/server/wms/CMakeLists.txt b/tests/src/server/wms/CMakeLists.txt
+index a6f84a722e..7321b4a266 100644
+--- a/tests/src/server/wms/CMakeLists.txt
++++ b/tests/src/server/wms/CMakeLists.txt
+@@ -42,6 +42,7 @@ set(TESTS
+   test_qgsserver_wms_dxf.cpp
+   test_qgsserver_wms_request.cpp
+   test_qgsserver_wms_restorer.cpp
++  test_qgsserver_wms_utils.cpp
+   test_qgsserver_wms_exceptions.cpp
+   test_qgsserver_wms_parameters.cpp
+   test_qgsserver_wms_vector_tile.cpp
+diff --git a/tests/src/server/wms/test_qgsserver_wms_utils.cpp b/tests/src/server/wms/test_qgsserver_wms_utils.cpp
+new file mode 100644
+index 0000000000..a5b2b04229
+--- /dev/null
++++ b/tests/src/server/wms/test_qgsserver_wms_utils.cpp
+@@ -0,0 +1,112 @@
++/***************************************************************************
++     test_qgsserver_wms_utils.cpp
++     ----------------------------
++    Date                 : November 2026
++    Copyright            : (C) 2026 by Michal Wloga
++    Email                : michal dot wloga at envirosolutions dot pl
++ ***************************************************************************
++ *                                                                         *
++ *   This program is free software; you can redistribute it and/or modify  *
++ *   it under the terms of the GNU General Public License as published by  *
++ *   the Free Software Foundation; either version 2 of the License, or     *
++ *   (at your option) any later version.                                   *
++ *                                                                         *
++ ***************************************************************************/
++
++#include "qgstest.h"
++#include "qgsbufferserverresponse.h"
++#include "qgswmsutils.h"
++
++#include <QBuffer>
++#include <QImage>
++#include <QPainter>
++
++/**
++ * \ingroup UnitTests
++ * This is a unit test for the WMS utilities
++ */
++class TestQgsServerWmsUtils : public QObject
++{
++    Q_OBJECT
++
++  private slots:
++    void initTestCase();
++    void cleanupTestCase();
++
++    void writeImage_png_data();
++    void writeImage_png();
++};
++
++void TestQgsServerWmsUtils::initTestCase()
++{
++  QgsApplication::init();
++  QgsApplication::initQgis();
++}
++
++void TestQgsServerWmsUtils::cleanupTestCase()
++{
++  QgsApplication::exitQgis();
++}
++
++void TestQgsServerWmsUtils::writeImage_png_data()
++{
++  QTest::addColumn<int>( "format" );
++  QTest::addColumn<int>( "width" );
++  QTest::addColumn<int>( "height" );
++
++  QTest::newRow( "opaque" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157;
++  QTest::newRow( "alpha" ) << static_cast<int>( QImage::Format_ARGB32 ) << 301 << 157;
++  QTest::newRow( "premultiplied alpha" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157;
++  QTest::newRow( "one pixel" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1 << 1;
++}
++
++void TestQgsServerWmsUtils::writeImage_png()
++{
++  QFETCH( int, format );
++  QFETCH( int, width );
++  QFETCH( int, height );
++
++  // an image with flat areas, gradients, antialiased edges and partial transparency
++  QImage image( width, height, static_cast<QImage::Format>( format ) );
++  image.fill( QColor( 255, 255, 255, 0 ) );
++  {
++    QPainter painter( &image );
++    painter.setRenderHint( QPainter::Antialiasing );
++    QLinearGradient gradient( 0, 0, width, height );
++    gradient.setColorAt( 0, QColor( 200, 30, 40, 255 ) );
++    gradient.setColorAt( 1, QColor( 20, 90, 220, 60 ) );
++    painter.fillRect( QRectF( 0, 0, width / 2.0, height ), gradient );
++    painter.setPen( QPen( QColor( 10, 120, 30, 180 ), 2.5 ) );
++    painter.drawLine( QPointF( 0.3, 0.7 ), QPointF( width - 0.4, height - 1.2 ) );
++    painter.setBrush( QColor( 250, 200, 0, 128 ) );
++    painter.drawEllipse( QRectF( width / 3.0, height / 4.0, width / 2.0, height / 2.0 ) );
++  }
++  image.setDotsPerMeterX( 3780 );
++  image.setDotsPerMeterY( 3543 );
++
++  QgsBufferServerResponse response;
++  QImage toWrite = image;
++  QgsWms::writeImage( response, toWrite, QStringLiteral( "image/png" ) );
++  QCOMPARE( response.header( QStringLiteral( "Content-Type" ) ), QStringLiteral( "image/png" ) );
++
++  response.flush();
++  const QByteArray data = response.body();
++  QVERIFY( data.startsWith( "\x89PNG" ) );
++  const QImage decoded = QImage::fromData( data, "PNG" );
++  QVERIFY( !decoded.isNull() );
++
++  // the result is the same as with the PNG writer of Qt
++  QBuffer buffer;
++  buffer.open( QIODevice::WriteOnly );
++  QVERIFY( image.save( &buffer, "PNG" ) );
++  const QImage expected = QImage::fromData( buffer.data(), "PNG" );
++
++  QCOMPARE( decoded.size(), expected.size() );
++  QCOMPARE( decoded.format(), expected.format() );
++  QCOMPARE( decoded.dotsPerMeterX(), expected.dotsPerMeterX() );
++  QCOMPARE( decoded.dotsPerMeterY(), expected.dotsPerMeterY() );
++  QVERIFY( decoded == expected );
++}
++
++QGSTEST_MAIN( TestQgsServerWmsUtils )
++#include "test_qgsserver_wms_utils.moc"

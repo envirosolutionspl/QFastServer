@@ -1,0 +1,124 @@
+From 8744f4e701b7177c6ab2092b073e03a72c8d831b Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 10:57:48 +0100
+Subject: [PATCH 07/12] [server] Choose the PNG row filter from the image
+ content
+
+Writing PNG images without row filtering is the best choice for rendered vector maps, but continuous tone images such as aerial imagery deflate better and faster with a row filter: without it the responses were 26-29 % larger than before.
+
+A few rows of the image are sampled: when less than a third of the pixels are equal to their left neighbour, the 'up' filter is used, otherwise no filter. Vector maps have 58-92 % of such pixels, aerial imagery about 12 %.
+
+Measured on 1024x768 GetMap requests of a Sentinel-2 image: responses 19 % larger than with the writer of Qt instead of 29 %, median 90 ms -> 32 ms. Vector maps are unchanged (13 % smaller than with the writer of Qt).
+
+diff --git a/src/server/services/wms/qgswmsutils.cpp b/src/server/services/wms/qgswmsutils.cpp
+index 50114cb962..245d24b6ca 100644
+--- a/src/server/services/wms/qgswmsutils.cpp
++++ b/src/server/services/wms/qgswmsutils.cpp
+@@ -21,6 +21,7 @@
+ 
+ #include <QRegularExpression>
+ 
++#include <algorithm>
+ #include <png.h>
+ 
+ #include "qgsmodule.h"
+@@ -45,7 +46,34 @@ namespace
+   }
+ 
+   /**
+-   * Writes a 32 bits \a image as PNG to \a device, without row filtering and with
++   * Returns the PNG row filter to use for a 32 bits \a image.
++   *
++   * Rendered vector maps are mostly made of flat areas, which deflate better and faster
++   * without row filtering. Continuous tone images, like aerial imagery, are both smaller
++   * and faster to deflate with a row filter. A few rows are sampled to tell them apart.
++   */
++  int pngRowFilter( const QImage &image )
++  {
++    const int width = image.width();
++    const int height = image.height();
++    const int step = std::max( 1, height / 16 );
++    qint64 flat = 0;
++    qint64 total = 0;
++    for ( int y = 0; y < height; y += step )
++    {
++      const QRgb *row = reinterpret_cast<const QRgb *>( image.constScanLine( y ) );
++      for ( int x = 1; x < width; ++x )
++      {
++        if ( row[x] == row[x - 1] )
++          ++flat;
++      }
++      total += width - 1;
++    }
++    return flat * 3 < total ? PNG_FILTER_UP : PNG_FILTER_NONE;
++  }
++
++  /**
++   * Writes a 32 bits \a image as PNG to \a device, with a single row filter and
+    * a low deflate level.
+    *
+    * For rendered maps this is several times faster than the PNG writer of Qt, which
+@@ -75,6 +103,8 @@ namespace
+         return false;
+     }
+ 
++    const int rowFilter = pngRowFilter( image );
++
+     png_structp png = png_create_write_struct( PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr );
+     if ( !png )
+       return false;
+@@ -95,7 +125,7 @@ namespace
+ 
+     png_set_write_fn( png, device, pngWriteCallback, pngFlushCallback );
+     png_set_compression_level( png, 2 );
+-    png_set_filter( png, PNG_FILTER_TYPE_BASE, PNG_FILTER_NONE );
++    png_set_filter( png, PNG_FILTER_TYPE_BASE, rowFilter );
+     png_set_IHDR( png, info, static_cast<png_uint_32>( image.width() ), static_cast<png_uint_32>( image.height() ), 8, hasAlpha ? PNG_COLOR_TYPE_RGB_ALPHA : PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
+     if ( image.dotsPerMeterX() > 0 || image.dotsPerMeterY() > 0 )
+       png_set_pHYs( png, info, static_cast<png_uint_32>( image.dotsPerMeterX() ), static_cast<png_uint_32>( image.dotsPerMeterY() ), PNG_RESOLUTION_METER );
+diff --git a/tests/src/server/wms/test_qgsserver_wms_utils.cpp b/tests/src/server/wms/test_qgsserver_wms_utils.cpp
+index a5b2b04229..7a3bd4e05f 100644
+--- a/tests/src/server/wms/test_qgsserver_wms_utils.cpp
++++ b/tests/src/server/wms/test_qgsserver_wms_utils.cpp
+@@ -53,11 +53,15 @@ void TestQgsServerWmsUtils::writeImage_png_data()
+   QTest::addColumn<int>( "format" );
+   QTest::addColumn<int>( "width" );
+   QTest::addColumn<int>( "height" );
+-
+-  QTest::newRow( "opaque" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157;
+-  QTest::newRow( "alpha" ) << static_cast<int>( QImage::Format_ARGB32 ) << 301 << 157;
+-  QTest::newRow( "premultiplied alpha" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157;
+-  QTest::newRow( "one pixel" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1 << 1;
++  QTest::addColumn<bool>( "continuousTone" );
++
++  QTest::newRow( "opaque" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157 << false;
++  QTest::newRow( "alpha" ) << static_cast<int>( QImage::Format_ARGB32 ) << 301 << 157 << false;
++  QTest::newRow( "premultiplied alpha" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157 << false;
++  QTest::newRow( "one pixel" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1 << 1 << false;
++  // images without flat areas are written with another row filter
++  QTest::newRow( "opaque continuous tone" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157 << true;
++  QTest::newRow( "premultiplied alpha continuous tone" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157 << true;
+ }
+ 
+ void TestQgsServerWmsUtils::writeImage_png()
+@@ -65,10 +69,20 @@ void TestQgsServerWmsUtils::writeImage_png()
+   QFETCH( int, format );
+   QFETCH( int, width );
+   QFETCH( int, height );
++  QFETCH( bool, continuousTone );
+ 
+   // an image with flat areas, gradients, antialiased edges and partial transparency
+   QImage image( width, height, static_cast<QImage::Format>( format ) );
+   image.fill( QColor( 255, 255, 255, 0 ) );
++  if ( continuousTone )
++  {
++    // every pixel differs from its neighbours
++    for ( int y = 0; y < height; ++y )
++    {
++      for ( int x = 0; x < width; ++x )
++        image.setPixelColor( x, y, QColor( ( x * 7 + y * 3 ) % 256, ( x * 5 + y * 11 ) % 256, ( x * 13 + y ) % 256, 255 - ( x + y ) % 100 ) );
++    }
++  }
+   {
+     QPainter painter( &image );
+     painter.setRenderHint( QPainter::Antialiasing );

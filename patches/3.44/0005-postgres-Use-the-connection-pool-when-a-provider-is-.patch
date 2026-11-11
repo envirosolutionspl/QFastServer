@@ -1,0 +1,123 @@
+From fade6df95ed8392da07566be5322c7634973501c Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 09:56:28 +0100
+Subject: [PATCH 05/12] [postgres] Use the connection pool when a provider is
+ created for a parallel loading
+
+When layers are loaded in parallel, the provider constructor runs in a worker thread and cannot use the shared connection, so each layer opened its own connection and closed it at the end of the constructor. Every new backend has to load PostGIS and fill its catalog caches again: for a project with 200 PostGIS layers this was 202 connections and about 60 % of the database time of the project loading.
+
+The constructor now takes its connection from the connection pool and releases it when done, so the layers reuse a few warm connections, which are also the ones used afterwards by the feature iterators.
+
+Measured with QGIS Server and a project with 200 PostGIS layers: project loading 1.17 s -> 0.79 s for one process, 2.4 s -> 1.0 s when 4 processes start at the same time.
+
+diff --git a/src/providers/postgres/qgspostgresprovider.cpp b/src/providers/postgres/qgspostgresprovider.cpp
+index 10a7d0b002..63bbe65913 100644
+--- a/src/providers/postgres/qgspostgresprovider.cpp
++++ b/src/providers/postgres/qgspostgresprovider.cpp
+@@ -160,7 +160,18 @@ QgsPostgresProvider::QgsPostgresProvider( QString const &uri, const ProviderOpti
+     return;
+   }
+ 
+-  mConnectionRO = QgsPostgresConn::connectDb( mUri, true, true, false, !mReadFlags.testFlag( Qgis::DataProviderReadFlag::SkipCredentialsRequest ) );
++  if ( flags.testFlag( Qgis::DataProviderReadFlag::ParallelThreadLoading ) )
++  {
++    // Constructor is called in another thread than the thread where the provider will live, the
++    // connection is only used until the end of the constructor. Take it from the connection pool:
++    // layers loaded in parallel then reuse a few connections instead of opening a new one each.
++    mConnectionRO = QgsPostgresConnPool::instance()->acquireConnection( QgsPostgresConn::connectionInfo( mUri, false ) );
++    mConnectionROIsPooled = mConnectionRO;
++  }
++  else
++  {
++    mConnectionRO = QgsPostgresConn::connectDb( mUri, true, true, false, !mReadFlags.testFlag( Qgis::DataProviderReadFlag::SkipCredentialsRequest ) );
++  }
+   if ( !mConnectionRO )
+   {
+     return;
+@@ -296,7 +307,7 @@ QgsPostgresProvider::QgsPostgresProvider( QString const &uri, const ProviderOpti
+   mLayerMetadata.setCrs( crs() );
+ 
+   // Constructor is called in another thread than the thread where the provider will live,
+-  // so we disconnect the DB, connection will be done later in the provider thread when needed
++  // so we release the connection, connection will be done later in the provider thread when needed
+   if ( flags.testFlag( Qgis::DataProviderReadFlag::ParallelThreadLoading ) )
+     disconnectDb();
+ }
+@@ -467,7 +478,15 @@ void QgsPostgresProvider::disconnectDb()
+ {
+   if ( mConnectionRO )
+   {
+-    mConnectionRO->unref();
++    if ( mConnectionROIsPooled )
++    {
++      QgsPostgresConnPool::instance()->releaseConnection( mConnectionRO );
++      mConnectionROIsPooled = false;
++    }
++    else
++    {
++      mConnectionRO->unref();
++    }
+     mConnectionRO = nullptr;
+   }
+ 
+diff --git a/src/providers/postgres/qgspostgresprovider.h b/src/providers/postgres/qgspostgresprovider.h
+index ac557c4f8f..9d54e9b1b0 100644
+--- a/src/providers/postgres/qgspostgresprovider.h
++++ b/src/providers/postgres/qgspostgresprovider.h
+@@ -445,6 +445,7 @@ class QgsPostgresProvider final : public QgsVectorDataProvider
+     QString paramValue( const QString &fieldvalue, const QString &defaultValue ) const;
+ 
+     mutable QgsPostgresConn *mConnectionRO = nullptr; //!< Read-only database connection (initially)
++    bool mConnectionROIsPooled = false;               //!< Whether the read-only connection was acquired from the connection pool
+     QgsPostgresConn *mConnectionRW = nullptr;         //!< Read-write database connection (on update)
+ 
+     QgsPostgresConn *connectionRO() const;
+diff --git a/tests/src/python/test_provider_postgres.py b/tests/src/python/test_provider_postgres.py
+index b1b5e2f8a2..05e25d7c24 100644
+--- a/tests/src/python/test_provider_postgres.py
++++ b/tests/src/python/test_provider_postgres.py
+@@ -5754,6 +5754,44 @@ class TestPyQgsPostgresProviderAsyncCreation(QgisTestCase):
+ 
+         settings.setVariantValue(current_value)
+ 
++    def testParallelLoadingReusesConnection(self):
++        """Providers created for a parallel loading take their connection
++        from the connection pool instead of opening a new one each"""
++
++        def connection_count():
++            # statistics views are frozen for the duration of a transaction
++            self.con.commit()
++            cur = self.con.cursor()
++            cur.execute(
++                "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database()"
++            )
++            count = cur.fetchone()[0]
++            cur.close()
++            self.con.commit()
++            return count
++
++        # sslmode differs from the other tests, so that no connection of the
++        # pool can already exist for this connection string
++        uri = (
++            self.dbconn
++            + ' sslmode=allow srid=4326 type=POINT table="qgis_test"."b31799_test_table" (geom) sql='
++        )
++        flags = Qgis.DataProviderReadFlags(
++            Qgis.DataProviderReadFlag.ParallelThreadLoading
++        )
++
++        before = connection_count()
++        providers = []
++        for _ in range(3):
++            provider = QgsProviderRegistry.instance().createProvider(
++                "postgres", uri, QgsDataProvider.ProviderOptions(), flags
++            )
++            self.assertTrue(provider.isValid())
++            providers.append(provider)
++
++        # the three providers used one connection, which is now idle in the pool
++        self.assertEqual(connection_count() - before, 1)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

@@ -1,0 +1,26 @@
+From e91c7f4781c2001fc7ee5d3a50fea848e98644f2 Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 14:04:23 +0100
+Subject: [PATCH 10/12] [gdal] Copy the cells of 8-bit bands without a call to
+ memcpy for every cell
+
+The loop which resamples the block read by GDAL to the requested grid
+called memcpy() for every cell, with a size only known at run time.
+8-bit bands, the most common case, are now copied with an assignment.
+
+diff --git a/src/core/providers/gdal/qgsgdalprovider.cpp b/src/core/providers/gdal/qgsgdalprovider.cpp
+index 7710bd056c..84681c3eb8 100644
+--- a/src/core/providers/gdal/qgsgdalprovider.cpp
++++ b/src/core/providers/gdal/qgsgdalprovider.cpp
+@@ -1246,7 +1246,10 @@ bool QgsGdalProvider::readBlock( int bandNo, QgsRectangle  const &reqExtent, int
+         src += ( tmpCol - lastCol ) * dataSize;
+         lastCol = tmpCol;
+       }
+-      memcpy( dst, src, dataSize );
++      if ( dataSize == 1 )
++        *dst = *src; // most common case (8-bit bands), without a call to memcpy for every cell
++      else
++        memcpy( dst, src, dataSize );
+       dst += dataSize;
+       x += increment;
+     }

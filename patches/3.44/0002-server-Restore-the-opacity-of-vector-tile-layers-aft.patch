@@ -1,0 +1,85 @@
+From b6b8e15fad4029f21647da24beae81a5a79be05d Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 09:06:45 +0100
+Subject: [PATCH 02/12] [server] Restore the opacity of vector tile layers
+ after a WMS request
+
+The OPACITIES parameter changes the opacity of vector tile layers, but the layer restorer did not save and restore it for this layer type. The opacity of a request leaked into all following requests served by the same process.
+
+diff --git a/src/server/services/wms/qgswmsrestorer.cpp b/src/server/services/wms/qgswmsrestorer.cpp
+index 52fe762867..1cc5ff77d9 100644
+--- a/src/server/services/wms/qgswmsrestorer.cpp
++++ b/src/server/services/wms/qgswmsrestorer.cpp
+@@ -64,8 +64,13 @@ QgsLayerRestorer::QgsLayerRestorer( const QList<QgsMapLayer *> &layers )
+         break;
+       }
+ 
+-      case Qgis::LayerType::Mesh:
+       case Qgis::LayerType::VectorTile:
++      {
++        settings.mOpacity = layer->opacity();
++        break;
++      }
++
++      case Qgis::LayerType::Mesh:
+       case Qgis::LayerType::Plugin:
+       case Qgis::LayerType::Annotation:
+       case Qgis::LayerType::PointCloud:
+@@ -124,8 +129,13 @@ QgsLayerRestorer::~QgsLayerRestorer()
+         break;
+       }
+ 
+-      case Qgis::LayerType::Mesh:
+       case Qgis::LayerType::VectorTile:
++      {
++        layer->setOpacity( settings.mOpacity );
++        break;
++      }
++
++      case Qgis::LayerType::Mesh:
+       case Qgis::LayerType::Plugin:
+       case Qgis::LayerType::Annotation:
+       case Qgis::LayerType::PointCloud:
+diff --git a/tests/src/server/wms/test_qgsserver_wms_restorer.cpp b/tests/src/server/wms/test_qgsserver_wms_restorer.cpp
+index e3596141d2..e8e7641d96 100644
+--- a/tests/src/server/wms/test_qgsserver_wms_restorer.cpp
++++ b/tests/src/server/wms/test_qgsserver_wms_restorer.cpp
+@@ -15,6 +15,7 @@
+ 
+ #include "qgstest.h"
+ #include "qgsvectorlayer.h"
++#include "qgsvectortilelayer.h"
+ 
+ #include "qgswmsrestorer.h"
+ #include "qgsserverinterfaceimpl.h"
+@@ -32,6 +33,7 @@ class TestQgsServerWmsRestorer : public QObject
+     void cleanupTestCase();
+ 
+     void restorer_layer();
++    void restorer_vector_tile_layer();
+ };
+ 
+ void TestQgsServerWmsRestorer::initTestCase()
+@@ -97,5 +99,22 @@ void TestQgsServerWmsRestorer::restorer_layer()
+   QCOMPARE( vl->opacity(), opacity );
+ }
+ 
++void TestQgsServerWmsRestorer::restorer_vector_tile_layer()
++{
++  QgsVectorTileLayer layer( QStringLiteral( "type=xyz&url=file:///tmp/{z}/{x}/{y}.pbf" ), QStringLiteral( "tiles" ) );
++  const double opacity = layer.opacity();
++
++  {
++    // destructor is called once out of scope
++    const QgsLayerRestorer restorer( { &layer } );
++
++    layer.setOpacity( opacity / 2 );
++    QCOMPARE( layer.opacity(), opacity / 2 );
++  }
++
++  // check that the initial opacity is restored
++  QCOMPARE( layer.opacity(), opacity );
++}
++
+ QGSTEST_MAIN( TestQgsServerWmsRestorer )
+ #include "test_qgsserver_wms_restorer.moc"

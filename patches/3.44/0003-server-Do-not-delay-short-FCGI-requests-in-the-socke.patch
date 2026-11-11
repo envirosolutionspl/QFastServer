@@ -1,0 +1,110 @@
+From a0c982f1a42ab9f74d36510aa694710a85baf18f Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 09:27:31 +0100
+Subject: [PATCH 03/12] [server] Do not delay short FCGI requests in the socket
+ monitoring thread
+
+The socket monitoring thread started every request with a select() call using a 10 ms timeout, and the response destructor joins the thread. Any request faster than 10 ms was therefore held until the timeout expired, which also capped a worker at about 100 requests per second.
+
+select() is now only used to poll the socket, and the wait between two checks is done on a condition variable, so stop() wakes the thread immediately. This also removes the unlock of a mutex from a thread which did not lock it, which is undefined behaviour.
+
+Measured with 4 FCGI workers, 256x256 PNG tiles of one PostGIS layer: median 11.0 ms -> 6.1 ms with one client, 316 -> 407 requests/s with 16 clients.
+
+diff --git a/src/server/qgsfcgiserverresponse.cpp b/src/server/qgsfcgiserverresponse.cpp
+index b78db541d8..01654472c9 100644
+--- a/src/server/qgsfcgiserverresponse.cpp
++++ b/src/server/qgsfcgiserverresponse.cpp
+@@ -97,17 +97,16 @@ QgsSocketMonitoringThread::QgsSocketMonitoringThread( std::shared_ptr<QgsFeedbac
+ // Informs the thread to quit
+ void QgsSocketMonitoringThread::stop()
+ {
+-  mShouldStop.store( true );
+-  // Release the mutex so the try_lock in the thread will not wait anymore and
+-  // the thread will end its loop as we have set 'mShouldStop' to true
+-  mMutex.unlock();
++  {
++    const std::lock_guard<std::mutex> lock( mMutex );
++    mShouldStop.store( true );
++  }
++  // Wake up the thread so that it ends its loop without waiting for the next check
++  mCondition.notify_one();
+ }
+ 
+ void QgsSocketMonitoringThread::run()
+ {
+-  // Lock the thread mutex: every try_lock will take 333ms
+-  mMutex.lock();
+-
+   if ( mIpcFd < 0 )
+   {
+     QgsMessageLog::logMessage( QStringLiteral( "Socket monitoring disabled: no socket fd!" ), QStringLiteral( "FCGIServer" ), Qgis::MessageLevel::Warning );
+@@ -119,18 +118,21 @@ void QgsSocketMonitoringThread::run()
+ 
+   char c;
+ 
+-  fd_set setOptions;
+-  FD_ZERO( &setOptions );        // clear the set
+-  FD_SET( mIpcFd, &setOptions ); // add our file descriptor to the set
+-
+-  struct timeval timeout;
+-  timeout.tv_sec = 0;
+-  timeout.tv_usec = 10000; // max 10ms of timeout for select
+-
+   while ( !mShouldStop.load() )
+   {
+-    // 'select' function will check if the socket is still valid after a 10ms timeout
++    // 'select' modifies its arguments, they need to be set again before each call
++    fd_set setOptions;
++    FD_ZERO( &setOptions );        // clear the set
++    FD_SET( mIpcFd, &setOptions ); // add our file descriptor to the set
++
++    // No timeout: 'select' only checks if the socket is still valid. Waiting here would
++    // delay the end of every request shorter than the timeout, because the response
++    // joins this thread when it is destroyed.
+     // see https://stackoverflow.com/a/30395738
++    struct timeval timeout;
++    timeout.tv_sec = 0;
++    timeout.tv_usec = 0;
++
+     int rv = select( mIpcFd + 1, &setOptions, NULL, NULL, &timeout );
+     if ( rv == -1 )
+     {
+@@ -169,10 +171,10 @@ void QgsSocketMonitoringThread::run()
+       }
+     }
+ 
+-    // If lock is acquired this means the response has finished and we will exit the while loop
+-    // else we will wait max for 333ms.
+-    if ( mMutex.try_lock_for( 333ms ) )
+-      mMutex.unlock();
++    // Wait max for 333ms before the next check. The wait ends at once when the
++    // response has finished.
++    std::unique_lock<std::mutex> lock( mMutex );
++    mCondition.wait_for( lock, 333ms, [this] { return mShouldStop.load(); } );
+   }
+ 
+   if ( mShouldStop.load() )
+diff --git a/src/server/qgsfcgiserverresponse.h b/src/server/qgsfcgiserverresponse.h
+index e8e7ef30d3..8589fab00b 100644
+--- a/src/server/qgsfcgiserverresponse.h
++++ b/src/server/qgsfcgiserverresponse.h
+@@ -26,6 +26,7 @@
+ #include "qgsserverresponse.h"
+ 
+ #include <QBuffer>
++#include <condition_variable>
+ #include <thread>
+ #include <mutex>
+ 
+@@ -59,8 +60,9 @@ class QgsSocketMonitoringThread
+     std::shared_ptr<QgsFeedback> mFeedback;
+     int mIpcFd = -1;
+ 
+-    // used to synchronize socket monitoring thread and fcgi response
+-    std::timed_mutex mMutex;
++    // used to wake up the socket monitoring thread as soon as the fcgi response is finished
++    std::mutex mMutex;
++    std::condition_variable mCondition;
+ };
+ 
+ /**

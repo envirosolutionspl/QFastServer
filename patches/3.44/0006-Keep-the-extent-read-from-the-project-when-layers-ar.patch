@@ -1,0 +1,88 @@
+From 9dc66e88e905271ec66ee7b3b548cfb34b8a969a Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 10:08:56 +0100
+Subject: [PATCH 06/12] Keep the extent read from the project when layers are
+ read with the trust flag
+
+QgsProject::onMapLayersAdded() set the 'read extent from XML' property of every vector layer from the project flag only. A project read with Qgis::ProjectReadFlag::TrustLayerMetadata, as QGIS Server does when QGIS_SERVER_TRUST_LAYER_METADATA is set, had the property enabled while reading the layers and reset right after, unless the project itself trusts the layer metadata. The extent of each layer was then computed by the provider on first use.
+
+The property is no longer reset when the project does not trust the layer metadata.
+
+Measured with QGIS Server, QGIS_SERVER_TRUST_LAYER_METADATA=true and a project with 200 PostGIS layers on views: first WMS GetCapabilities of a process 3.2 s -> 0.02 s, with the same document.
+
+diff --git a/src/core/project/qgsproject.cpp b/src/core/project/qgsproject.cpp
+index ffdc532d72..7f670ffae0 100644
+--- a/src/core/project/qgsproject.cpp
++++ b/src/core/project/qgsproject.cpp
+@@ -2981,7 +2981,10 @@ void QgsProject::onMapLayersAdded( const QList<QgsMapLayer *> &layers )
+ 
+     if ( QgsVectorLayer *vlayer = qobject_cast<QgsVectorLayer *>( layer ) )
+     {
+-      vlayer->setReadExtentFromXml( mFlags & Qgis::ProjectFlag::TrustStoredLayerStatistics );
++      // do not reset the property when the project does not trust the layer metadata: the layer may have
++      // been read with the Qgis::ProjectReadFlag::TrustLayerMetadata flag, which also enables it
++      if ( mFlags & Qgis::ProjectFlag::TrustStoredLayerStatistics )
++        vlayer->setReadExtentFromXml( true );
+       if ( vlayer->dataProvider() )
+         vlayer->dataProvider()->setProviderProperty( QgsVectorDataProvider::EvaluateDefaultValues,
+             ( bool )( mFlags & Qgis::ProjectFlag::EvaluateDefaultValuesOnProviderSide ) );
+diff --git a/tests/src/python/test_qgsproject.py b/tests/src/python/test_qgsproject.py
+index c7e5896ae5..d03b545420 100644
+--- a/tests/src/python/test_qgsproject.py
++++ b/tests/src/python/test_qgsproject.py
+@@ -2273,6 +2273,55 @@ class TestQgsProject(QgisTestCase):
+             extentXML = layerXML.findall(".//extent")[0]
+             self.assertNotEqual(len(extentXML.getchildren()), 0)
+ 
++    def test_read_extent_from_xml_with_trust_read_flag(self):
++        """
++        Test that the layers read their extent from the project file when the
++        project is read with the TrustLayerMetadata flag
++        """
++
++        layer = QgsVectorLayer(
++            "Point?crs=epsg:4326&field=int:integer", "test", "memory"
++        )
++        feature = QgsFeature(layer.fields())
++        feature.setGeometry(QgsGeometry.fromWkt("Point (1 2)"))
++        self.assertTrue(layer.dataProvider().addFeature(feature))
++        layer.updateExtents()
++
++        project = QgsProject()
++        project.addMapLayers([layer])
++        self.assertFalse(layer.readExtentFromXml())
++
++        with TemporaryDirectory() as d:
++            path = os.path.join(d, "project.qgs")
++            self.assertTrue(project.write(path))
++
++            # the project does not trust the layer metadata
++            project = QgsProject()
++            self.assertTrue(project.read(path))
++            (layer,) = project.mapLayers().values()
++            self.assertFalse(layer.readExtentFromXml())
++
++            # but the reader of the project does
++            project = QgsProject()
++            self.assertTrue(
++                project.read(
++                    path,
++                    Qgis.ProjectReadFlags(Qgis.ProjectReadFlag.TrustLayerMetadata),
++                )
++            )
++            (layer,) = project.mapLayers().values()
++            self.assertTrue(layer.readExtentFromXml())
++
++            # the project trusts the layer metadata
++            project.setFlags(
++                project.flags() | Qgis.ProjectFlag.TrustStoredLayerStatistics
++            )
++            self.assertTrue(project.write(path))
++            project = QgsProject()
++            self.assertTrue(project.read(path))
++            (layer,) = project.mapLayers().values()
++            self.assertTrue(layer.readExtentFromXml())
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

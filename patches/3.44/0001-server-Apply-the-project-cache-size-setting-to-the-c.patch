@@ -1,0 +1,56 @@
+From f1a9d90164a835763c515ab37a54f1e50f647829 Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 09:06:45 +0100
+Subject: [PATCH 01/12] [server] Apply the project cache size setting to the
+ config cache instance
+
+QgsConfigCache::initialize() created the instance from a cache strategy only, so QGIS_SERVER_PROJECT_CACHE_SIZE was never applied and the cache always kept the default number of projects. Use the constructor taking the settings, which also sets the cache size.
+
+diff --git a/src/server/qgsconfigcache.cpp b/src/server/qgsconfigcache.cpp
+index 938e5b48bc..d2df48ad08 100644
+--- a/src/server/qgsconfigcache.cpp
++++ b/src/server/qgsconfigcache.cpp
+@@ -69,7 +69,8 @@ void QgsConfigCache::initialize( QgsServerSettings *settings )
+     return;
+   }
+ 
+-  sInstance = new QgsConfigCache( getStrategyFromSettings( settings ) );
++  // the constructor taking the settings also applies the project cache size
++  sInstance = settings ? new QgsConfigCache( settings ) : new QgsConfigCache( getStrategyFromSettings( settings ) );
+ }
+ 
+ QgsConfigCache *QgsConfigCache::instance()
+diff --git a/tests/src/python/test_qgsserver_configcache.py b/tests/src/python/test_qgsserver_configcache.py
+index 6c73f0e0f4..2627fd2b7e 100644
+--- a/tests/src/python/test_qgsserver_configcache.py
++++ b/tests/src/python/test_qgsserver_configcache.py
+@@ -190,12 +190,26 @@ class TestQgsServerConfigCache(unittest.TestCase):
+     def test_initialized_instance(self):
+ 
+         os.environ["QGIS_SERVER_PROJECT_CACHE_STRATEGY"] = "off"
+-        settings = QgsServerSettings()
+-        settings.load()
++        os.environ["QGIS_SERVER_PROJECT_CACHE_SIZE"] = "1"
++        try:
++            settings = QgsServerSettings()
++            settings.load()
++        finally:
++            del os.environ["QGIS_SERVER_PROJECT_CACHE_SIZE"]
+ 
+         QgsConfigCache.initialize(settings)
+ 
+-        self.assertEqual(QgsConfigCache.instance().strategyName(), "off")
++        cache = QgsConfigCache.instance()
++        self.assertEqual(cache.strategyName(), "off")
++
++        # the project cache size from the settings applies to the instance
++        path1 = Path(unitTestDataPath("qgis_server_project")) / "project.qgs"
++        path2 = Path(unitTestDataPath("qgis_server")) / "test_project.qgs"
++        self.assertIsNotNone(cache.project(str(path1)))
++        self.assertIsNotNone(cache.project(str(path2)))
++        projects = cache.projects()
++        self.assertEqual(len(projects), 1)
++        self.assertEqual(projects[0].fileName(), path2.as_posix())
+ 
+     def test_list_projects(self):
+         settings = QgsServerSettings()

@@ -1,7 +1,7 @@
 From e637906ecfc696963e9be9d90f5d3eda72376ad6 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 14:05:09 +0100
-Subject: [PATCH 12/12] [server] Get the features of a JSON GetFeatureInfo with
+Subject: [PATCH 12/14] [server] Get the features of a JSON GetFeatureInfo with
  a single request
 
 The JSON output of GetFeatureInfo fetched every feature again with its

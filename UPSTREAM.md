@@ -31,6 +31,8 @@ Branch `fast-server-3_44` of <https://github.com/envirosolutionspl/QGIS>.
 | 0010 | Copy the cells of 8-bit bands without a call to memcpy for every cell | performance | not checked |
 | 0011 | Speed up the conversion of WMS images to 8 bits PNG | performance | not checked |
 | 0012 | Get the features of a JSON GetFeatureInfo with a single request | performance | not checked |
+| 0013 | Do not convert every character to check its encoding when WFS features are written as GML | performance | not needed with Qt 6 |
+| 0014 | Format each group code once (DXF) | performance | not checked |
 
 "Applies cleanly" and "applies by hand" describe a trial application of the commit to upstream `master`
 (`53943cb164`); nothing was built on `master`.
@@ -42,8 +44,7 @@ account for. None of them is implemented.
 
 | Candidate | Share of the request | Note |
 | --- | --- | --- |
-| WFS GetFeature, GML | 44% in the per-character encoding check of QtXml | Qt 5 only |
 | Labels | 36% converting text to outlines | gain only for texts which repeat |
 | GetPrint, PNG | 58% writing the PNG with Qt | the file metadata has to be kept |
-| DXF export | about 60% formatting numbers | — |
+| DXF export, coordinates | 37% formatting the coordinates | the output has to stay the same digit for digit |
 | WMTS GetCapabilities | 58% transforming extents, no cache | small absolute gain |

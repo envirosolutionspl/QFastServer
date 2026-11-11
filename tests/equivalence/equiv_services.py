@@ -2,6 +2,8 @@
 
 Run inside a container with PyQt5 on the compose network (project svc.qgs on both services):
   python3 equiv_services.py http://qgis_base/ http://qgis_fast/ [requests.json]
+The URLs are the OWS end points (http://host/ows/ for the official image and its nginx front);
+OGC API requests go to the root of the same host.
 Images are compared pixel by pixel, XML after canonicalisation (Qt randomises the attribute order per process),
 PDF after removing the creation date, everything else byte by byte. Exit code 1 on any difference.
 """
@@ -97,7 +99,8 @@ REQUESTS = {
 
 
 def fetch(base, query):
-    url = base + (query if query.startswith("wfs3/") else "?" + query)
+    root = "/".join(base.split("/")[:3]) + "/"
+    url = root + query if query.startswith("wfs3/") else base + "?" + query
     try:
         with urllib.request.urlopen(url, timeout=300) as r:
             return r.status, r.headers.get("Content-Type", ""), r.read()
@@ -106,7 +109,9 @@ def fetch(base, query):
 
 
 def normalise(ctype, body, base):
-    body = body.replace(base.encode(), b"http://HOST/")
+    # the own address of the server (in links) and the time of the request (OGC API) are not compared
+    body = body.replace(base.encode(), b"http://HOST/").replace(("/".join(base.split("/")[:3]) + "/").encode(), b"http://HOST/")
+    body = re.sub(rb'"timeStamp": ?"[^"]*"', b'"timeStamp":""', body)
     if ctype.startswith("image/") and b"svg" not in ctype.encode():
         img = QImage.fromData(body)
         if img.isNull():
@@ -124,6 +129,12 @@ def normalise(ctype, body, base):
             return "xml?", body
     return "bytes", body
 
+
+# a front which does not route the requests to the server answers every request with the same page
+for base in (A, B):
+    status, ctype, body = fetch(base, REQUESTS["wms_capabilities"])
+    if status != 200 or b"WMS_Capabilities" not in body:
+        sys.exit(f"{base} does not answer WMS GetCapabilities (HTTP {status}, {len(body)} bytes)")
 
 failed = 0
 rows = {}

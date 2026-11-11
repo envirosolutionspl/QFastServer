@@ -1,7 +1,7 @@
 From ece66eb6c2e94701e6254b89653c4bf7c1d4bce6 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 11:08:00 +0100
-Subject: [PATCH 08/12] Speed up the cell loop of the raster projector
+Subject: [PATCH 08/14] Speed up the cell loop of the raster projector
 
 QgsRasterProjector::block() did for every destination cell the calculations which only depend on the destination row (control point matrix row, switch of the helper rows, interpolation fraction), and it got the source and destination data pointers through QgsRasterBlock::constBits() and bits() for every cell. For image blocks bits() also goes through QImage::bits(), which checks every time if the image has to be detached.
 

@@ -1,0 +1,236 @@
+From 4cabe57cc4e582db7263173d58692645deefc35a Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 15:18:55 +0100
+Subject: [PATCH 13/14] [server] Do not convert every character to check its
+ encoding when WFS features are written as GML
+
+With Qt 5 QDomDocument::toByteArray() asks the text codec whether it can
+encode each character of each text and attribute, and the UTF-8 codec
+converts the character to a new byte array to answer. This took 44% of
+the time of a GetFeature request returned as GML.
+
+The features are now written with a codec which accepts the characters
+always valid in UTF-8 without a conversion and leaves the other ones to
+the UTF-8 codec. The output is the same, which is tested.
+
+A GetFeature request returning 2000 polygons as GML3 (2.2 MB) takes
+52 ms instead of 70 ms.
+
+diff --git a/src/server/services/wfs/qgswfsgetfeature.cpp b/src/server/services/wfs/qgswfsgetfeature.cpp
+index 1809bc0061..da4d9264d6 100644
+--- a/src/server/services/wfs/qgswfsgetfeature.cpp
++++ b/src/server/services/wfs/qgswfsgetfeature.cpp
+@@ -1353,7 +1353,7 @@ namespace QgsWfs
+           featureElement = createFeatureGML2( feature, gmlDoc, params, project, pkAttributes );
+           gmlDoc.appendChild( featureElement );
+         }
+-        response.write( gmlDoc.toByteArray() );
++        response.write( domDocumentToByteArray( gmlDoc ) );
+       }
+ 
+       // Stream partial content
+diff --git a/src/server/services/wfs/qgswfsutils.cpp b/src/server/services/wfs/qgswfsutils.cpp
+index 8a68b013a9..f2933be869 100644
+--- a/src/server/services/wfs/qgswfsutils.cpp
++++ b/src/server/services/wfs/qgswfsutils.cpp
+@@ -26,6 +26,53 @@
+ #include "qgsvectorlayer.h"
+ #include "qgsproject.h"
+ 
++#include <QDomDocument>
++#if QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
++#include <QTextCodec>
++#include <QTextStream>
++
++namespace
++{
++
++  /**
++   * Text codec which only answers QTextCodec::canEncode() for a document written to a string as UTF-8:
++   * the characters which are always valid in UTF-8 are accepted without a conversion, the decision for
++   * the other ones (surrogates, non characters) is left to the UTF-8 codec of Qt.
++   */
++  class Utf8CheckCodec : public QTextCodec
++  {
++    public:
++      Utf8CheckCodec()
++        : mUtf8( QTextCodec::codecForName( "UTF-8" ) )
++      {}
++
++      QByteArray name() const override { return QByteArrayLiteral( "x-qgis-utf8-check" ); }
++      int mibEnum() const override { return -1001; } // not an IANA character set
++
++    protected:
++      QString convertToUnicode( const char *chars, int length, ConverterState *state ) const override
++      {
++        return mUtf8->toUnicode( chars, length, state );
++      }
++
++      QByteArray convertFromUnicode( const QChar *chars, int length, ConverterState *state ) const override
++      {
++        for ( int i = 0; i < length; ++i )
++        {
++          const ushort c = chars[i].unicode();
++          if ( c >= 0xD800 && ( c < 0xE000 || c >= 0xFDD0 ) )
++            return mUtf8->fromUnicode( chars, length, state );
++        }
++        return QByteArray();
++      }
++
++    private:
++      QTextCodec *mUtf8 = nullptr;
++  };
++
++} // namespace
++#endif
++
+ namespace QgsWfs
+ {
+   QString implementationVersion()
+@@ -292,4 +339,33 @@ namespace QgsWfs
+     return request;
+   }
+ 
++  QByteArray domDocumentToByteArray( const QDomDocument &doc )
++  {
++#if QT_VERSION < QT_VERSION_CHECK( 6, 0, 0 )
++    // A document with a processing instruction or a document type is written in another way
++    // when the encoding comes from the stream: these are left to Qt
++    bool simple = doc.doctype().name().isEmpty();
++    for ( QDomNode node = doc.firstChild(); simple && !node.isNull(); node = node.nextSibling() )
++      simple = !node.isProcessingInstruction();
++
++    if ( simple )
++    {
++      // the codecs are owned by Qt
++      static QTextCodec *sCodec = new Utf8CheckCodec();
++      // written first by QDomNode::save() when the encoding comes from the stream
++      static const QString sDeclaration = QStringLiteral( "<?xml version=\"1.0\" encoding=\"%1\"?>\n" ).arg( QString::fromLatin1( sCodec->name() ) );
++
++      QString xml;
++      {
++        QTextStream stream( &xml, QIODevice::WriteOnly );
++        stream.setCodec( sCodec );
++        doc.save( stream, 1, QDomNode::EncodingFromTextStream );
++      }
++      if ( xml.startsWith( sDeclaration ) )
++        return xml.midRef( sDeclaration.size() ).toUtf8();
++    }
++#endif
++    return doc.toByteArray();
++  }
++
+ } // namespace QgsWfs
+diff --git a/src/server/services/wfs/qgswfsutils.h b/src/server/services/wfs/qgswfsutils.h
+index d25788029c..89d766b384 100644
+--- a/src/server/services/wfs/qgswfsutils.h
++++ b/src/server/services/wfs/qgswfsutils.h
+@@ -30,6 +30,7 @@
+ #include "qgsserversettings.h"
+ 
+ class QgsMapLayer;
++class QDomDocument;
+ 
+ /**
+  * \ingroup server
+@@ -70,6 +71,15 @@ namespace QgsWfs
+    */
+   QgsFeatureRequest parseFilterElement( const QString &typeName, QDomElement &filterElem, QStringList &serverFids, const QgsProject *project = nullptr, const QgsMapLayer *layer = nullptr );
+ 
++  /**
++   * Returns \a doc as UTF-8 XML, with the same result as QDomDocument::toByteArray().
++   *
++   * With Qt 5 the serialization of a document asks its text codec, for every character of every text,
++   * whether the character can be encoded, and the codec converts the character to answer. Here the answer
++   * is given without a conversion for the characters which are always valid in UTF-8.
++   */
++  QByteArray domDocumentToByteArray( const QDomDocument &doc );
++
+   // Define namespaces used in WFS documents
+   const QString WFS_NAMESPACE = QStringLiteral( "http://www.opengis.net/wfs" );
+   const QString GML_NAMESPACE = QStringLiteral( "http://www.opengis.net/gml" );
+diff --git a/tests/src/server/wfs/test_qgsserver_wfs_getfeature.cpp b/tests/src/server/wfs/test_qgsserver_wfs_getfeature.cpp
+index da6f7af43a..c20df2a28f 100644
+--- a/tests/src/server/wfs/test_qgsserver_wfs_getfeature.cpp
++++ b/tests/src/server/wfs/test_qgsserver_wfs_getfeature.cpp
+@@ -21,6 +21,9 @@
+ #include "qgsbufferserverresponse.h"
+ #include "qgsserverinterfaceimpl.h"
+ #include "qgswfsgetfeature.h"
++#include "qgswfsutils.h"
++
++#include <QDomDocument>
+ 
+ /**
+  * \ingroup UnitTests
+@@ -35,6 +38,7 @@ class TestQgsServerWfsGetFeature : public QObject
+     void cleanupTestCase();
+ 
+     void nullValueProperty();
++    void domDocumentToByteArray();
+ };
+ 
+ void TestQgsServerWfsGetFeature::initTestCase()
+@@ -147,5 +151,62 @@ void TestQgsServerWfsGetFeature::nullValueProperty()
+   QCOMPARE( gml3Children.count(), 3 );
+ }
+ 
++void TestQgsServerWfsGetFeature::domDocumentToByteArray()
++{
++  // elements with and without namespace, attributes, texts with the characters which are escaped,
++  // non ASCII characters, a surrogate pair, a lone surrogate and non characters
++  QDomDocument doc;
++  QDomElement member = doc.createElement( QStringLiteral( "gml:featureMember" ) );
++  doc.appendChild( member );
++  QDomElement feature = doc.createElement( QStringLiteral( "qgs:layer" ) );
++  feature.setAttribute( QStringLiteral( "gml:id" ), QStringLiteral( "layer.1" ) );
++  feature.setAttribute( QStringLiteral( "note" ), QStringLiteral( "a \"quoted\" <value> & a tab\t, a line\nbreak, \u017c\u00f3\u0142w" ) );
++  member.appendChild( feature );
++  QDomElement geometry = doc.createElementNS( QStringLiteral( "http://www.opengis.net/gml" ), QStringLiteral( "gml:Point" ) );
++  geometry.setAttribute( QStringLiteral( "srsName" ), QStringLiteral( "EPSG:4326" ) );
++  QDomElement pos = doc.createElementNS( QStringLiteral( "http://www.opengis.net/gml" ), QStringLiteral( "gml:pos" ) );
++  pos.setAttribute( QStringLiteral( "srsDimension" ), QStringLiteral( "2" ) );
++  pos.appendChild( doc.createTextNode( QStringLiteral( "18.5 50.25" ) ) );
++  geometry.appendChild( pos );
++  feature.appendChild( geometry );
++  feature.appendChild( doc.createElement( QStringLiteral( "qgs:empty" ) ) );
++
++  const QStringList texts {
++    QStringLiteral( "plain text" ),
++    QStringLiteral( "<tag> & \"quotes\" and apostrophes ' ]]> end" ),
++    QStringLiteral( "carriage\rreturn, line\nfeed, tab\tcharacter" ),
++    QStringLiteral( "Za\u017c\u00f3\u0142\u0107 g\u0119\u015bl\u0105 ja\u017a\u0144, \u6771\u4eac, \u041c\u043e\u0441\u043a\u0432\u0430" ),
++    QString::fromUtf8( "surrogate pair \xF0\x9F\x97\xBA end" ),
++    QStringLiteral( "lone surrogate " ) + QChar( 0xD83D ) + QStringLiteral( " end" ),
++    QStringLiteral( "non characters " ) + QChar( 0xFFFE ) + QChar( 0xFDD0 ) + QChar( 0xFFFF ) + QStringLiteral( " end" ),
++    QString(),
++  };
++  int index = 0;
++  for ( const QString &text : texts )
++  {
++    QDomElement field = doc.createElement( QStringLiteral( "qgs:field%1" ).arg( index++ ) );
++    field.appendChild( doc.createTextNode( text ) );
++    feature.appendChild( field );
++  }
++
++  const QByteArray expected = doc.toByteArray();
++  QVERIFY( expected.contains( "&lt;tag>" ) );
++  QCOMPARE( QgsWfs::domDocumentToByteArray( doc ), expected );
++
++  // documents with a processing instruction or a document type
++  QDomDocument withDeclaration;
++  withDeclaration.appendChild( withDeclaration.createProcessingInstruction( QStringLiteral( "xml" ), QStringLiteral( "version=\"1.0\" encoding=\"ISO-8859-1\"" ) ) );
++  QDomElement root = withDeclaration.createElement( QStringLiteral( "root" ) );
++  root.appendChild( withDeclaration.createTextNode( QStringLiteral( "\u017c\u00f3\u0142w \u00e9" ) ) );
++  withDeclaration.appendChild( root );
++  QCOMPARE( QgsWfs::domDocumentToByteArray( withDeclaration ), withDeclaration.toByteArray() );
++
++  QDomDocument withDoctype( QStringLiteral( "html" ) );
++  withDoctype.appendChild( withDoctype.createElement( QStringLiteral( "html" ) ) );
++  QCOMPARE( QgsWfs::domDocumentToByteArray( withDoctype ), withDoctype.toByteArray() );
++
++  QCOMPARE( QgsWfs::domDocumentToByteArray( QDomDocument() ), QDomDocument().toByteArray() );
++}
++
+ QGSTEST_MAIN( TestQgsServerWfsGetFeature )
+ #include "test_qgsserver_wfs_getfeature.moc"

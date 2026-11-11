@@ -1,7 +1,7 @@
 From 8744f4e701b7177c6ab2092b073e03a72c8d831b Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 10:57:48 +0100
-Subject: [PATCH 07/12] [server] Choose the PNG row filter from the image
+Subject: [PATCH 07/14] [server] Choose the PNG row filter from the image
  content
 
 Writing PNG images without row filtering is the best choice for rendered vector maps, but continuous tone images such as aerial imagery deflate better and faster with a row filter: without it the responses were 26-29 % larger than before.

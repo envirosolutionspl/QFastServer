@@ -1,7 +1,7 @@
 From b6b8e15fad4029f21647da24beae81a5a79be05d Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:06:45 +0100
-Subject: [PATCH 02/12] [server] Restore the opacity of vector tile layers
+Subject: [PATCH 02/14] [server] Restore the opacity of vector tile layers
  after a WMS request
 
 The OPACITIES parameter changes the opacity of vector tile layers, but the layer restorer did not save and restore it for this layer type. The opacity of a request leaked into all following requests served by the same process.

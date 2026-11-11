@@ -1,0 +1,38 @@
+From d3c624ee6ec6c706cf6b48564ce12a289494370d Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 15:23:48 +0100
+Subject: [PATCH 14/14] [dxf] Format each group code once
+
+A group code is written before every value of a DXF file, with
+QString::arg(). This took a quarter of the time of a DXF export of
+vector layers. The few different codes are now formatted once.
+
+A GetMap request returning 2.9 MB of DXF takes 40 ms instead of 52 ms.
+
+diff --git a/src/core/dxf/qgsdxfexport.cpp b/src/core/dxf/qgsdxfexport.cpp
+index 9bc23b294b..4aab8876b4 100644
+--- a/src/core/dxf/qgsdxfexport.cpp
++++ b/src/core/dxf/qgsdxfexport.cpp
+@@ -173,7 +173,21 @@ void QgsDxfExport::writeGroup( const QColor &color, int exactMatchCode, int rgbC
+ 
+ void QgsDxfExport::writeGroupCode( int code )
+ {
+-  mTextStream << QStringLiteral( "%1\n" ).arg( code, 3, 10, QChar( ' ' ) );
++  // A group code is written before every value and there are few different codes:
++  // each code is formatted once
++  static constexpr int CACHED_CODES = 1100;
++  thread_local QString sFormattedCodes[CACHED_CODES];
++  if ( code >= 0 && code < CACHED_CODES )
++  {
++    QString &formattedCode = sFormattedCodes[code];
++    if ( formattedCode.isEmpty() )
++      formattedCode = QStringLiteral( "%1\n" ).arg( code, 3, 10, QChar( ' ' ) );
++    mTextStream << formattedCode;
++  }
++  else
++  {
++    mTextStream << QStringLiteral( "%1\n" ).arg( code, 3, 10, QChar( ' ' ) );
++  }
+ }
+ 
+ void QgsDxfExport::writeInt( int i )

@@ -1,7 +1,7 @@
 From 71c998a3e25a138a7ba4c6eea61d95d41fe3f7be Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:40:38 +0100
-Subject: [PATCH 04/12] [server] Write 32 bits PNG images with libpng, without
+Subject: [PATCH 04/14] [server] Write 32 bits PNG images with libpng, without
  row filtering
 
 WMS images in the default PNG format were written with QImage::save(), which uses the adaptive row filters of libpng and the default deflate level. For rendered maps the filters cost time and make the result larger, and the encoding took more than half of the time of a 1024x768 GetMap request.

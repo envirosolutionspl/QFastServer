@@ -1,7 +1,7 @@
 From 8b44f7e59b3d7f35f3e6769c09e1a9304ce4d296 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 14:04:23 +0100
-Subject: [PATCH 09/12] Speed up the no data test of 8-bit bands in the
+Subject: [PATCH 09/14] Speed up the no data test of 8-bit bands in the
  multiband color renderer
 
 QgsRasterBlock::isNoData() was called three times for every cell of a

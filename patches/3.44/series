@@ -10,3 +10,5 @@
 0010-gdal-Copy-the-cells-of-8-bit-bands-without-a-call-to.patch
 0011-server-Speed-up-the-conversion-of-WMS-images-to-8-bi.patch
 0012-server-Get-the-features-of-a-JSON-GetFeatureInfo-wit.patch
+0013-server-Do-not-convert-every-character-to-check-its-e.patch
+0014-dxf-Format-each-group-code-once.patch

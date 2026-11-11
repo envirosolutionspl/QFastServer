@@ -1,7 +1,7 @@
 From f1a9d90164a835763c515ab37a54f1e50f647829 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:06:45 +0100
-Subject: [PATCH 01/12] [server] Apply the project cache size setting to the
+Subject: [PATCH 01/14] [server] Apply the project cache size setting to the
  config cache instance
 
 QgsConfigCache::initialize() created the instance from a cache strategy only, so QGIS_SERVER_PROJECT_CACHE_SIZE was never applied and the cache always kept the default number of projects. Use the constructor taking the settings, which also sets the cache size.

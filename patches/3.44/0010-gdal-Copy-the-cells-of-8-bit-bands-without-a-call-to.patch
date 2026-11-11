@@ -1,7 +1,7 @@
 From e91c7f4781c2001fc7ee5d3a50fea848e98644f2 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 14:04:23 +0100
-Subject: [PATCH 10/12] [gdal] Copy the cells of 8-bit bands without a call to
+Subject: [PATCH 10/14] [gdal] Copy the cells of 8-bit bands without a call to
  memcpy for every cell
 
 The loop which resamples the block read by GDAL to the requested grid

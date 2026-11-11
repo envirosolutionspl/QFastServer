@@ -1,7 +1,7 @@
 # QFastServer
 
-[![QGIS Server 3.44 LTR](https://img.shields.io/badge/QGIS%20Server-3.44%20LTR-589632)](#versions-and-compatibility)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#versions-and-compatibility)
+[![QGIS Server 3.44 LTR](https://img.shields.io/badge/QGIS%20Server-3.44%20LTR-589632)](#compatibility)
+[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#compatibility)
 [![License: GPL v2 or later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
 
 Performance patches for [QGIS Server](https://qgis.org): the same requests, the same responses, less time.
@@ -13,64 +13,29 @@ they are; the responses are the ones the unpatched server gives.
 QFastServer is an independent project. It is not affiliated with or endorsed by QGIS.org. QGIS is a trademark
 of QGIS.org.
 
-**Status: pre-release.** The patch series for the 3.44 long term release line is published here. There is no
-binary release yet, and the numbers below were measured against an unpatched build of the same source, not
-yet against the official packages (see [Measurements](#measurements)).
-
-## What it changes
-
-| Area | Change |
-| --- | --- |
-| Every request | The FastCGI socket monitoring thread no longer adds up to 10 ms to each request |
-| PNG output | 32 bits PNG written directly with libpng, row filter chosen from the image content |
-| 8 bits PNG | Faster search of the closest palette color, same result |
-| Rasters | Faster cell loop of the raster projector, of the multiband renderer and of the GDAL provider |
-| PostGIS | Connections are reused when the layers of a project are loaded in parallel |
-| Trusted layer metadata | The extent stored in the project is kept, so the first GetCapabilities does not scan every layer |
-| GetFeatureInfo (JSON) | One request to the data source for a layer instead of one for every feature |
-| Fixes | The project cache size setting is applied; the opacity of vector tile layers is restored after a request |
-
-Every patch is one commit with a test, written to the upstream coding standards. The list is in
-[UPSTREAM.md](UPSTREAM.md), together with the reason why the patches are not proposed to QGIS: they were
-written with the assistance of an AI coding agent, which the QGIS contribution policy does not allow.
-
-## Measurements
-
-Same source commit, with and without the patches, built in the same image and served the same way
-(lighttpd, 4 FastCGI workers, 4 CPUs for the container, PostGIS on the same host). Load generated with k6:
-median response time with one client, requests per second with 16 clients. No failed responses in any run.
-
-| Request | Median, 1 client | Requests/s, 16 clients |
-| --- | --- | --- |
-| Tile 256x256, 1 vector layer, PNG | 10.9 → 4.6 ms | 323 → 495 |
-| Tile 256x256, 3 vector layers, PNG | 11.0 → 7.0 ms | 250 → 304 |
-| Map 1024x768, 1 vector layer, PNG | 27.7 → 14.4 ms | 84 → 111 |
-| Map 1024x768, 3 vector layers, PNG | 41.2 → 24.6 ms | 50 → 64 |
-| Raster, layer CRS, JPEG | 22.9 → 9.7 ms | 165 → 332 |
-| Raster, layer CRS, PNG | 89.2 → 22.0 ms | 38 → 138 |
-| Raster, reprojected, JPEG | 43.4 → 15.7 ms | 82 → 202 |
-| GetFeatureInfo, JSON | 10.9 → 3.5 ms | 377 → 918 |
-| GetLegendGraphic, PNG | 11.0 → 5.0 ms | 377 → 716 |
-| WMTS GetTile | 11.0 → 5.3 ms | 281 → 377 |
-
-Project with 200 PostGIS layers: four workers starting together load it in 1.0 s instead of 2.4 s; the first
-GetCapabilities with `QGIS_SERVER_TRUST_LAYER_METADATA=true` takes 0.02 s instead of 3.2 s.
-
-Not faster: GetPrint, WFS GetFeature.
-
-What to keep in mind when reading these numbers:
-
-- They come from one machine (a laptop on mains power) and short runs. Differences below about 10% are not
-  resolved by this set-up.
-- The reference is an unpatched build of the same commit, not the official packages or Docker image. A
-  comparison with the official image of the same version will be published with the first release.
-- PNG files of pure imagery (orthophotos) are about 20% larger than upstream, because rows are written
-  without the expensive filter search. PNG files of vector maps are 13 to 20% smaller.
+**Status: pre-release.** There is no published image or release yet; the image is built from this repository.
 
 ## Compatibility
 
-A release of QFastServer is declared compatible with one QGIS Server release, the one in its version number.
-The declaration is checked, not assumed:
+Every version of QFastServer is made for exactly one QGIS Server release and is only checked against it.
+Use the row of the QGIS Server version you run today.
+
+| QGIS Server | Values for the build | Patch series | State |
+| --- | --- | --- | --- |
+| 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 14 patches | no release yet; see the notes below the table |
+| 4.x | — | — | not started; the code changed by the patches is still present in upstream `master` |
+| any other version | — | — | not supported |
+
+Notes for 3.44.15: the patches apply to the upstream tag `final-3_44_15`; the tests, the comparison of the
+responses and the measurements below were made on the branch `release-3_44` 28 commits after that tag
+(see [SOURCE](patches/3.44/SOURCE)).
+
+A release is named `<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server release it
+is built from and compatible with, then the number of the QFastServer release for it. The notes of every
+release state the upstream tag and commit, the number of patches and the results of the tests and of the
+comparison with the unpatched server ([RELEASING.md](RELEASING.md)).
+
+How the compatibility is checked:
 
 - the upstream test suites for the server, rasters, projects and vector layers pass on the patched build;
 - 59 kinds of requests (WMS GetMap in every output format, GetFeatureInfo, GetLegendGraphic, GetPrint, WFS,
@@ -83,35 +48,115 @@ Five of the 59 requests give different responses from one process to the next in
 GetContext, DXF, PDF, a cascaded WMS layer as PNG), so they cannot be compared between builds. For 8 bits PNG
 the equality is tested at the function level instead.
 
-## Versions and compatibility
+## Installation
 
-A QFastServer release is named `<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server
-release it is built from and compatible with, then the number of the QFastServer release for it. The notes of
-every release state the upstream tag and commit, the number of patches and the results of the tests and of
-the comparison with the unpatched server ([RELEASING.md](RELEASING.md)).
+### Docker
 
-| QGIS Server | Patch series | State |
+The QFastServer image is the official `qgis/qgis-server` image of the same version with the QGIS binaries
+replaced by a build of the same upstream release with the patches applied. The build uses the options of the
+upstream Debian packaging, so the features and the file layout are the ones of the official packages.
+
+Build the image for your QGIS Server version (one of the [compatibility table](#compatibility)):
+
+```bash
+git clone https://github.com/envirosolutionspl/QFastServer
+cd QFastServer
+docker/build.sh <QGIS Server version>
+```
+
+The build compiles QGIS, which takes about an hour and about 1.5 GB of memory for each parallel compiler job
+(8 by default, `--build-arg JOBS=<n>` to change it). The result is the image
+`qfastserver:<QGIS Server version>`.
+
+Use it exactly as the official image of that version: same entry point, ports, volumes and environment
+variables ([QGIS Server documentation](https://docs.qgis.org/latest/en/docs/server_manual/containerized_deployment.html)).
+In an existing deployment only the image name changes:
+
+```yaml
+services:
+  qgis-server:
+    # image: qgis/qgis-server:<QGIS Server version>-noble
+    image: qfastserver:<QGIS Server version>
+```
+
+### From source
+
+With the values of your QGIS Server version loaded from its file:
+
+```bash
+. versions/<QGIS Server version>.env
+git clone --branch "$QGIS_TAG" --depth 1 https://github.com/qgis/QGIS
+git -C QGIS apply "$PWD"/patches/"$SERIES"/*.patch
+```
+
+Then build QGIS Server as described in `INSTALL.md` of the QGIS source tree. The patched source tree is also
+available in the development fork, <https://github.com/envirosolutionspl/QGIS>, on the branch named in
+`patches/<series>/SOURCE`.
+
+## What it changes
+
+| Area | Change |
+| --- | --- |
+| Every request | The FastCGI socket monitoring thread no longer adds up to 10 ms to each request |
+| PNG output | 32 bits PNG written directly with libpng, row filter chosen from the image content |
+| 8 bits PNG | Faster search of the closest palette color, same result |
+| Rasters | Faster cell loop of the raster projector, of the multiband renderer and of the GDAL provider |
+| PostGIS | Connections are reused when the layers of a project are loaded in parallel |
+| Trusted layer metadata | The extent stored in the project is kept, so the first GetCapabilities does not scan every layer |
+| GetFeatureInfo (JSON) | One request to the data source for a layer instead of one for every feature |
+| WFS GetFeature (GML) | The features are written without converting every character to check its encoding |
+| DXF export | The group codes are formatted once |
+| Fixes | The project cache size setting is applied; the opacity of vector tile layers is restored after a request |
+
+Every patch is one commit with a test, written to the upstream coding standards. The list is in
+[UPSTREAM.md](UPSTREAM.md), together with the reason why the patches are not proposed to QGIS: they were
+written with the assistance of an AI coding agent, which the QGIS contribution policy does not allow.
+
+## Measurements
+
+The official image `qgis/qgis-server:3.44.15-noble` against the QFastServer image built from it with
+`docker/build.sh 3.44.15`. Both are started the same way: the nginx front of the image, 4 FastCGI workers,
+parallel rendering off, 4 CPUs and 4 GB of memory for the container, PostGIS 16 in another container on the
+same host. Load generated with k6: median response time with one client, requests per second with 16 clients,
+two runs of 8 s for each image and each cell, the images alternating. No failed responses in any run.
+
+| Request | Median, 1 client | Requests/s, 16 clients |
 | --- | --- | --- |
-| 3.44.15 (LTR) | [3.44](patches/3.44), 12 patches | patches apply to the tag `final-3_44_15`; built, tested and compared on `release-3_44` 28 commits after that tag (see [SOURCE](patches/3.44/SOURCE)); no release yet |
-| 4.x | — | not started; the code paths changed by the patches are still present in upstream `master` |
-| other versions | — | not supported: the patches are only checked against the versions listed here |
+| Tile 256x256, 1 vector layer, PNG | 10.9 → 4.5 ms | 304 → 459 |
+| Tile 256x256, 3 vector layers, PNG | 11.0 → 7.9 ms | 222 → 271 |
+| Map 1024x768, 1 vector layer, PNG | 30.3 → 18.0 ms | 70 → 95 |
+| Map 1024x768, 3 vector layers, PNG | 44.6 → 27.5 ms | 42 → 57 |
+| Map 1024x768, raster in the layer CRS, JPEG | 17.8 → 10.1 ms | 198 → 301 |
+| Map 1024x768, raster reprojected, JPEG | 37.5 → 18.9 ms | 86 → 162 |
+| GetFeatureInfo, JSON | 11.0 → 3.7 ms | 374 → 871 |
+| GetLegendGraphic, PNG | 10.9 → 4.5 ms | 377 → 724 |
+| WMTS GetTile | 10.9 → 5.3 ms | 261 → 356 |
+| WFS GetFeature, GML, up to 2000 polygons | 44.6 → 37.0 ms | 57 → 74 |
+| Map 1024x768, 3 vector layers, 8 bits PNG | 37.2 → 35.9 ms | 45 → 47 |
 
-## Building
+Machine: Intel Core Ultra 7 165H (16 cores, 22 threads), 31 GB of memory, Windows 11, Docker Engine 29.9 on
+WSL 2 (Linux 6.18), laptop on mains power. Data: an OpenStreetMap extract of one Polish region in PostGIS
+(land use, buildings, roads), a Sentinel-2 true colour image of 10980x10980 pixels as a deflate compressed
+GeoTIFF with overviews.
 
-Until there is a binary release:
+Measured with an unpatched and a patched build of the same source instead of the official image:
 
-```bash
-git clone --branch final-3_44_15 --depth 1 https://github.com/qgis/QGIS
-```
+- project with 200 PostGIS layers: four workers starting together load it in 1.0 s instead of 2.4 s; the
+  first GetCapabilities with `QGIS_SERVER_TRUST_LAYER_METADATA=true` takes 0.02 s instead of 3.2 s;
+- map of a raster in the layer CRS as PNG: 22 ms instead of 89 ms;
+- GetMap returning 2.9 MB of DXF, in-process: 40 ms instead of 52 ms.
 
-```bash
-git -C QGIS am ../QFastServer/patches/3.44/*.patch
-```
+Not faster: GetPrint.
 
-Then build QGIS Server as described in the
-[QGIS developer documentation](https://github.com/qgis/QGIS/blob/release-3_44/INSTALL.md). The patched source
-tree is also available as the branch `fast-server-3_44` of the development fork,
-<https://github.com/envirosolutionspl/QGIS>.
+What to keep in mind when reading these numbers:
+
+- They come from one machine and short runs. Differences below about 10% are not resolved by this set-up:
+  the 8 bits PNG row is within that noise (in-process, 24 different maps take 11% less time).
+- The image is built with the options of the upstream Debian packaging, but not by the build system of the
+  official packages; the compiler flags may differ.
+- PNG files of vector maps are smaller than upstream (tiles 20.8 → 16.6 kB, maps of 3 layers 330 → 288 kB).
+  PNG files of pure imagery (orthophotos) are about 20% larger, because rows are written without the
+  expensive filter search.
 
 ## How this repository is maintained
 
@@ -120,7 +165,8 @@ tree is also available as the branch `fast-server-3_44` of the development fork,
   hand. `tools/check-patches.sh` verifies that the series applied to its base gives exactly the tree of the
   fork branch.
 - For a new upstream release the branch is rebased on the upstream tag, built, tested and compared with the
-  unpatched build; then the series is exported again and released under the new version.
+  unpatched build; then the series is exported again, a file is added under `versions/` and the release is
+  published under the new version.
 
 ## License
 

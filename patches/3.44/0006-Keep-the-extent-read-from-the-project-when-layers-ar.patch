@@ -1,7 +1,7 @@
 From 9dc66e88e905271ec66ee7b3b548cfb34b8a969a Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 10:08:56 +0100
-Subject: [PATCH 06/12] Keep the extent read from the project when layers are
+Subject: [PATCH 06/14] Keep the extent read from the project when layers are
  read with the trust flag
 
 QgsProject::onMapLayersAdded() set the 'read extent from XML' property of every vector layer from the project flag only. A project read with Qgis::ProjectReadFlag::TrustLayerMetadata, as QGIS Server does when QGIS_SERVER_TRUST_LAYER_METADATA is set, had the property enabled while reading the layers and reset right after, unless the project itself trusts the layer metadata. The extent of each layer was then computed by the provider on first use.

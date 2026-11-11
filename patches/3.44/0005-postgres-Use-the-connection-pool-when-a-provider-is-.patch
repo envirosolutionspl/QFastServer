@@ -1,7 +1,7 @@
 From fade6df95ed8392da07566be5322c7634973501c Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:56:28 +0100
-Subject: [PATCH 05/12] [postgres] Use the connection pool when a provider is
+Subject: [PATCH 05/14] [postgres] Use the connection pool when a provider is
  created for a parallel loading
 
 When layers are loaded in parallel, the provider constructor runs in a worker thread and cannot use the shared connection, so each layer opened its own connection and closed it at the end of the constructor. Every new backend has to load PostGIS and fill its catalog caches again: for a project with 200 PostGIS layers this was 202 connections and about 60 % of the database time of the project loading.

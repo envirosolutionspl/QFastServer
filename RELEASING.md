@@ -5,14 +5,21 @@ checks below, and their results go into the release notes.
 
 ## Steps
 
-1. In the development fork, rebase the branch of the series on the upstream release tag
-   (for example `final-3_44_15`), build, and run the upstream test suites.
-2. Compare the patched build with the unpatched build of the same tag
-   ([tests/equivalence](tests/equivalence)) and measure both.
-3. Export the patches: `tools/export-patches.sh <fork> <upstream tag> <branch> <series>`.
-   `tools/check-patches.sh` has to report that the tree matches the fork branch.
-4. Tag the fork branch and this repository with the version, `<QGIS Server version>-qfs.<n>`.
-5. Publish the release with notes written from the template below.
+1. In the development fork, rebase the branch of the series on the upstream release branch, build, and run
+   the upstream test suites.
+2. Export the patches: `tools/export-patches.sh <fork> <base> <branch> <series>`, then check that the series
+   applies to the upstream release tag: `tools/check-patches.sh <fork> <series> <upstream tag>`.
+3. Add `versions/<QGIS Server version>.env` and build the image: `docker/build.sh <QGIS Server version>`.
+4. Compare the image with the official image of the same version ([tests/equivalence](tests/equivalence))
+   and measure both.
+5. Write the release notes from the template below to `releases/<QGIS Server version>-qfs.<n>.md`.
+6. Push the tag `<QGIS Server version>-qfs.<n>`. The workflow `.github/workflows/release.yml` builds the
+   image again from the upstream tag and the patches, starts it, publishes it as
+   `ghcr.io/envirosolutionspl/qfastserver:<tag>` and creates the release with the notes. It refuses a tag
+   whose notes have no Compatibility section.
+
+The source of a release is the upstream tag plus the patch series of this repository at the release tag:
+the image is built from exactly that.
 
 ## Release notes template
 

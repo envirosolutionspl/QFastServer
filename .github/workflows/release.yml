@@ -1,0 +1,94 @@
+name: Release
+
+# A tag <QGIS Server version>-qfs.<n> builds the image of that QGIS Server version, publishes it to the
+# GitHub container registry and creates the release with the notes of releases/<tag>.md.
+# A manual run only builds and starts the image, nothing is published.
+
+on:
+  push:
+    tags: ['*-qfs.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: QGIS Server version to build (a file of versions/); nothing is published
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            TAG=$GITHUB_REF_NAME
+            VERSION=${TAG%%-qfs.*}
+            # no release without its compatibility statement
+            if ! grep -q '^## Compatibility' "releases/$TAG.md"; then
+              echo "::error::releases/$TAG.md with a Compatibility section is required (see RELEASING.md)"
+              exit 1
+            fi
+          else
+            TAG=
+            VERSION=$INPUT_VERSION
+          fi
+          if [ ! -f "versions/$VERSION.env" ]; then
+            echo "::error::no versions/$VERSION.env"
+            exit 1
+          fi
+          {
+            echo "TAG=$TAG"
+            echo "VERSION=$VERSION"
+            echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}"
+          } >>"$GITHUB_ENV"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Build the image
+        run: docker/build.sh "$VERSION" --build-arg JOBS=4
+
+      - name: Start the image
+        run: |
+          docker run -d --name qfastserver -p 8080:80 "qfastserver:$VERSION"
+          answer=
+          for i in $(seq 30); do
+            # without a project the server answers with an error document: it is enough to know that it runs
+            answer=$(curl -s -m 10 "http://localhost:8080/ows/?SERVICE=WMS&REQUEST=GetCapabilities" || true)
+            if echo "$answer" | grep -q -E 'Project file error|WMS_Capabilities'; then break; fi
+            answer=
+            sleep 2
+          done
+          docker logs qfastserver 2>&1 | tail -20
+          docker rm -f qfastserver
+          test -n "$answer"
+
+      - name: Publish the image
+        if: env.TAG != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "qfastserver:$VERSION" "$IMAGE:$TAG"
+          docker tag "qfastserver:$VERSION" "$IMAGE:$VERSION"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:$VERSION"
+
+      - name: Create the release
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . "versions/$VERSION.env"
+          tar -czf "qfastserver-$TAG-patches.tar.gz" "patches/$SERIES" "versions/$VERSION.env"
+          gh release create "$TAG" --title "QFastServer $TAG" --notes-file "releases/$TAG.md" "qfastserver-$TAG-patches.tar.gz"

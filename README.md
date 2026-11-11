@@ -1,7 +1,7 @@
 # QFastServer
 
 [![QGIS Server 3.44 LTR](https://img.shields.io/badge/QGIS%20Server-3.44%20LTR-589632)](#compatibility)
-[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#compatibility)
+[![Release](https://img.shields.io/github/v/release/envirosolutionspl/QFastServer)](https://github.com/envirosolutionspl/QFastServer/releases)
 [![License: GPL v2 or later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
 
 Performance patches for [QGIS Server](https://qgis.org): the same requests, the same responses, less time.
@@ -13,8 +13,6 @@ they are; the responses are the ones the unpatched server gives.
 QFastServer is an independent project. It is not affiliated with or endorsed by QGIS.org. QGIS is a trademark
 of QGIS.org.
 
-**Status: pre-release.** There is no published image or release yet; the image is built from this repository.
-
 ## Compatibility
 
 Every version of QFastServer is made for exactly one QGIS Server release and is only checked against it.
@@ -22,13 +20,13 @@ Use the row of the QGIS Server version you run today.
 
 | QGIS Server | Values for the build | Patch series | State |
 | --- | --- | --- | --- |
-| 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 14 patches | no release yet; see the notes below the table |
+| 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 14 patches | released: [3.44.15-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.1) |
 | 4.x | — | — | not started; the code changed by the patches is still present in upstream `master` |
 | any other version | — | — | not supported |
 
-Notes for 3.44.15: the patches apply to the upstream tag `final-3_44_15`; the tests, the comparison of the
-responses and the measurements below were made on the branch `release-3_44` 28 commits after that tag
-(see [SOURCE](patches/3.44/SOURCE)).
+Notes for 3.44.15: the image is built from the upstream tag `final-3_44_15` with the patches applied; the
+upstream test suites were run with the same patches on the branch `release-3_44` 28 commits after that tag
+(see [SOURCE](patches/3.44/SOURCE)). What was verified for a release is in its notes.
 
 A release is named `<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server release it
 is built from and compatible with, then the number of the QFastServer release for it. The notes of every
@@ -56,7 +54,27 @@ The QFastServer image is the official `qgis/qgis-server` image of the same versi
 replaced by a build of the same upstream release with the patches applied. The build uses the options of the
 upstream Debian packaging, so the features and the file layout are the ones of the official packages.
 
-Build the image for your QGIS Server version (one of the [compatibility table](#compatibility)):
+Pull the image of your QGIS Server version (one of the [compatibility table](#compatibility)):
+
+```bash
+docker pull ghcr.io/envirosolutionspl/qfastserver:<QGIS Server version>
+```
+
+`<QGIS Server version>` is the latest QFastServer release for that version; a tag of the form
+`<QGIS Server version>-qfs.<n>` pins one release.
+
+Use the image exactly as the official image of that version: same entry point, ports, volumes and environment
+variables ([QGIS Server documentation](https://docs.qgis.org/latest/en/docs/server_manual/containerized_deployment.html)).
+In an existing deployment only the image name changes:
+
+```yaml
+services:
+  qgis-server:
+    # image: qgis/qgis-server:<QGIS Server version>-noble
+    image: ghcr.io/envirosolutionspl/qfastserver:<QGIS Server version>
+```
+
+To build the image yourself instead:
 
 ```bash
 git clone https://github.com/envirosolutionspl/QFastServer
@@ -67,17 +85,6 @@ docker/build.sh <QGIS Server version>
 The build compiles QGIS, which takes about an hour and about 1.5 GB of memory for each parallel compiler job
 (8 by default, `--build-arg JOBS=<n>` to change it). The result is the image
 `qfastserver:<QGIS Server version>`.
-
-Use it exactly as the official image of that version: same entry point, ports, volumes and environment
-variables ([QGIS Server documentation](https://docs.qgis.org/latest/en/docs/server_manual/containerized_deployment.html)).
-In an existing deployment only the image name changes:
-
-```yaml
-services:
-  qgis-server:
-    # image: qgis/qgis-server:<QGIS Server version>-noble
-    image: qfastserver:<QGIS Server version>
-```
 
 ### From source
 

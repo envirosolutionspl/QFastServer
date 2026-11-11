@@ -180,7 +180,9 @@ What to keep in mind when reading these numbers:
 - They come from one machine and one run. Differences below about 10% are not resolved by this set-up.
 - MapServer and GeoServer were not tuned beyond the set-up described in the benchmark document. Their
   columns show the images as they come with the same resources, not the best these servers can do.
-- The styles were written by hand for every server; the images are not identical between the servers.
+- The styles were written by hand for every server; the images are not identical between the servers. The
+  legend of GeoServer is an image of 199 bytes (a style without rule titles), so that row does not compare the
+  same work.
 - The image is built with the options of the upstream Debian packaging, but not by the build system of the
   official packages; the compiler flags may differ.
 - PNG files of vector maps are smaller than upstream (tiles 20.7 → 16.6 kB, maps of 3 layers 343 → 288 kB).

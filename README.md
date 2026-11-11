@@ -1,5 +1,9 @@
 # QFastServer
 
+[![QGIS Server 3.44 LTR](https://img.shields.io/badge/QGIS%20Server-3.44%20LTR-589632)](#versions-and-compatibility)
+[![Status: pre-release](https://img.shields.io/badge/status-pre--release-orange)](#versions-and-compatibility)
+[![License: GPL v2 or later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
+
 Performance patches for [QGIS Server](https://qgis.org): the same requests, the same responses, less time.
 
 QFastServer is not another map server. It is a small series of patches on top of a specific QGIS Server
@@ -79,14 +83,18 @@ Five of the 59 requests give different responses from one process to the next in
 GetContext, DXF, PDF, a cascaded WMS layer as PNG), so they cannot be compared between builds. For 8 bits PNG
 the equality is tested at the function level instead.
 
-## Versions
+## Versions and compatibility
 
-`<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server release the patches apply to,
-then the number of the QFastServer release for it.
+A QFastServer release is named `<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server
+release it is built from and compatible with, then the number of the QFastServer release for it. The notes of
+every release state the upstream tag and commit, the number of patches and the results of the tests and of
+the comparison with the unpatched server ([RELEASING.md](RELEASING.md)).
 
-| Series | Upstream base | Patches |
+| QGIS Server | Patch series | State |
 | --- | --- | --- |
-| [3.44](patches/3.44) | `release-3_44` after 3.44.15 (see [SOURCE](patches/3.44/SOURCE)); also applies to the tag `final-3_44_15` | 12 |
+| 3.44.15 (LTR) | [3.44](patches/3.44), 12 patches | patches apply to the tag `final-3_44_15`; built, tested and compared on `release-3_44` 28 commits after that tag (see [SOURCE](patches/3.44/SOURCE)); no release yet |
+| 4.x | — | not started; the code paths changed by the patches are still present in upstream `master` |
+| other versions | — | not supported: the patches are only checked against the versions listed here |
 
 ## Building
 

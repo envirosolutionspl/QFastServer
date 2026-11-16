@@ -104,7 +104,7 @@ available in the development fork, <https://github.com/envirosolutionspl/QGIS>, 
 
 | Area | Change |
 | --- | --- |
-| Every request | The FastCGI socket monitoring thread no longer adds up to 10 ms to each request |
+| Every request (FastCGI) | The FastCGI socket monitoring thread no longer adds up to 10 ms to each request |
 | PNG output | 32 bits PNG written directly with libpng, row filter chosen from the image content |
 | 8 bits PNG | Faster search of the closest palette color, same result |
 | Rasters | Faster cell loop of the raster projector, of the multiband renderer and of the GDAL provider |
@@ -188,6 +188,28 @@ What to keep in mind when reading these numbers:
 - PNG files of vector maps are smaller than upstream (tiles 20.7 → 16.6 kB, maps of 3 layers 343 → 288 kB).
   PNG files of pure imagery (orthophotos) are about 20% larger, because rows are written without the
   expensive filter search.
+
+### With QJazz
+
+[QJazz](https://github.com/3liz/qjazz), the server of the Lizmap stack, replaces the FastCGI front with its
+own, so it does not have the floor of about 11 ms either. The rendering is done by the same QGIS libraries, and
+the QGIS libraries of QFastServer work under QJazz unchanged. Same machine and limits, measured in one session
+for each family of requests, so not comparable with the table above:
+
+| Request | QGIS Server | QJazz | QFastServer | QJazz with QFastServer libraries |
+| --- | --- | --- | --- | --- |
+| Tile 256x256, buildings, PNG | 11.1 / 280 | 9.8 / 250 | 4.6 / 420 | 7.3 / 317 |
+| Map 1024x768, 3 vector layers, PNG | 50.6 / 40 | 55.1 / 35 | 25.5 / 58 | 27.9 / 58 |
+| Map 1024x768, raster in its CRS, PNG (1 client only) | 84.3 | 89.8 | 23.2 | 27.2 |
+| Map 1024x768, raster reprojected, JPEG | 34.6 / 83 | 40.2 / 76 | 18.3 / 166 | 21.8 / 140 |
+| GetFeatureInfo, JSON | 11.1 / 369 | 5.1 / 574 | 4.6 / 637 | 4.8 / 698 |
+| WMS GetCapabilities | 11.2 / 373 | 1.8 / 1784 | 1.1 / 2361 | 1.6 / 1852 |
+| WFS GetFeature, GML, up to 2000 polygons | 49.0 / 49 | 158 / 18 | 40.8 / 61 | 112 / 39 |
+
+Over 62 kinds of requests, QJazz with the libraries of QFastServer has a median 1.44 times lower and a
+throughput 1.31 times higher than QJazz (geometric means). QJazz was run with the defaults of its image, front
+and pool in one container; other settings may give other results. All rows and the set-up:
+[benchmarks/3.44.15-qfs.1-qjazz.md](benchmarks/3.44.15-qfs.1-qjazz.md).
 
 ## How this repository is maintained
 

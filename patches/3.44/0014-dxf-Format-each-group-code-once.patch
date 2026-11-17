@@ -1,7 +1,7 @@
 From d3c624ee6ec6c706cf6b48564ce12a289494370d Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 15:23:48 +0100
-Subject: [PATCH 14/14] [dxf] Format each group code once
+Subject: [PATCH 14/15] [dxf] Format each group code once
 
 A group code is written before every value of a DXF file, with
 QString::arg(). This took a quarter of the time of a DXF export of

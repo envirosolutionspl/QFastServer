@@ -33,6 +33,7 @@ Branch `fast-server-3_44` of <https://github.com/envirosolutionspl/QGIS>.
 | 0012 | Get the features of a JSON GetFeatureInfo with a single request | performance | not checked |
 | 0013 | Do not convert every character to check its encoding when WFS features are written as GML | performance | not needed with Qt 6 |
 | 0014 | Format each group code once (DXF) | performance | not checked |
+| 0015 | Write empty and nearly empty 32 bits PNG images with the run-length deflate strategy | performance | follows 0004 |
 
 "Applies cleanly" and "applies by hand" describe a trial application of the commit to upstream `master`
 (`53943cb164`); nothing was built on `master`.

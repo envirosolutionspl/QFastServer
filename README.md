@@ -20,7 +20,7 @@ Use the row of the QGIS Server version you run today.
 
 | QGIS Server | Values for the build | Patch series | State |
 | --- | --- | --- | --- |
-| 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 14 patches | released: [3.44.15-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.1) |
+| 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 15 patches | released: [3.44.15-qfs.2](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.2) |
 | 4.x | — | — | not started; the code changed by the patches is still present in upstream `master` |
 | any other version | — | — | not supported |
 
@@ -74,6 +74,37 @@ services:
     image: ghcr.io/envirosolutionspl/qfastserver:<QGIS Server version>
 ```
 
+#### Options of the image
+
+Two settings exist only in this image. Both are off by default, and without them the container is started
+by the unchanged start script of the official image.
+
+| Variable | Effect | Default |
+| --- | --- | --- |
+| `QFASTSERVER_WORKERS` | Number of QGIS Server processes answering on the FastCGI socket of the container | 1, as the official image |
+| `QFASTSERVER_GZIP` | `true`: nginx compresses the XML, JSON and text responses for the clients which accept gzip; images are sent as they are | not compressed, as the official image |
+
+A QGIS Server process answers one request at a time, so with the default of one process the requests of a
+container are answered one after the other, in the official image as well. `QFASTSERVER_WORKERS` starts
+several processes in the container; the other way is to run several containers behind a load balancer. Every
+process keeps its own copy of the loaded projects: plan the memory for that, and expect the first request for
+a project to be slow once for each process. When one of the processes ends, the container stops, as it does
+with a single process. `QGIS_SERVER_MAX_THREADS` is the number of rendering threads of each process.
+
+In a container with 4 CPUs, 16 maps of 1920x1080 pixels requested at once were all answered after 0.79 s with
+one process and after 0.28 s with `QFASTSERVER_WORKERS=4`.
+
+Like the official image, this one declares no health check. A request to `/ows/` without parameters is
+answered by QGIS Server itself with HTTP 200, so it can be used to check that the server answers and not only
+nginx. With one process the check waits behind the request being rendered: allow for that in the timeout.
+
+```yaml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/ows/"]
+      interval: 30s
+      timeout: 20s
+```
+
 To build the image yourself instead:
 
 ```bash
@@ -105,7 +136,7 @@ available in the development fork, <https://github.com/envirosolutionspl/QGIS>, 
 | Area | Change |
 | --- | --- |
 | Every request (FastCGI) | The FastCGI socket monitoring thread no longer adds up to 10 ms to each request |
-| PNG output | 32 bits PNG written directly with libpng, row filter chosen from the image content |
+| PNG output | 32 bits PNG written directly with libpng, row filter chosen from the image content; empty and nearly empty images are written compactly |
 | 8 bits PNG | Faster search of the closest palette color, same result |
 | Rasters | Faster cell loop of the raster projector, of the multiband renderer and of the GDAL provider |
 | PostGIS | Connections are reused when the layers of a project are loaded in parallel |
@@ -114,6 +145,7 @@ available in the development fork, <https://github.com/envirosolutionspl/QGIS>, 
 | WFS GetFeature (GML) | The features are written without converting every character to check its encoding |
 | DXF export | The group codes are formatted once |
 | Fixes | The project cache size setting is applied; the opacity of vector tile layers is restored after a request |
+| Image (optional) | Several QGIS Server processes in one container, gzip for the text responses: see [Options of the image](#options-of-the-image) |
 
 Every patch is one commit with a test, written to the upstream coding standards. The list is in
 [UPSTREAM.md](UPSTREAM.md), together with the reason why the patches are not proposed to QGIS: they were
@@ -127,6 +159,11 @@ QGIS Server, QFastServer and MapServer with 4 FastCGI workers, GeoServer with 2 
 another container on the same host. QGIS Server and QFastServer are started the same way (the nginx front of
 the image, parallel rendering off) with the same projects. Load generated with k6, 20 s for each cell after
 a warm-up.
+
+Both images start one QGIS Server process by default. For this comparison each was started with 4 processes
+by a start script written for the benchmark; in the QFastServer image the same is done with
+`QFASTSERVER_WORKERS=4` since the release 3.44.15-qfs.2. With one process the requests per second with 16
+clients are lower than in the table.
 
 Cells: **median response time with one client in ms / requests per second with 16 clients**.
 
@@ -185,7 +222,8 @@ What to keep in mind when reading these numbers:
   same work.
 - The image is built with the options of the upstream Debian packaging, but not by the build system of the
   official packages; the compiler flags may differ.
-- PNG files of vector maps are smaller than upstream (tiles 20.7 → 16.6 kB, maps of 3 layers 343 → 288 kB).
+- PNG files of vector maps are smaller than upstream (tiles 20.7 → 16.6 kB, maps of 3 layers 343 → 288 kB);
+  empty maps have the size they have upstream.
   PNG files of pure imagery (orthophotos) are about 20% larger, because rows are written without the
   expensive filter search.
 

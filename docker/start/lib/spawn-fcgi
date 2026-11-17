@@ -1,0 +1,10 @@
+#!/bin/bash
+# Called in place of spawn-fcgi by the start script of the official image when several workers
+# are asked for (see qfastserver-start.sh). Same call of spawn-fcgi, but the program started on
+# the FastCGI socket is the supervisor of the workers instead of a single QGIS Server process.
+args=("$@")
+last=$((${#args[@]} - 1))
+if [ "$last" -ge 0 ] && [ "${args[$last]}" = /usr/lib/cgi-bin/qgis_mapserv.fcgi ]; then
+    args[$last]=/usr/local/lib/qfastserver/qfastserver-workers
+fi
+exec /usr/bin/spawn-fcgi "${args[@]}"

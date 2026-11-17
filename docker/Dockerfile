@@ -80,6 +80,18 @@ RUN ldconfig \
  && python3 -c "from qgis.core import Qgis; import qgis.server, qgis.analysis; print('QGIS', Qgis.QGIS_VERSION)" \
  && rm /tmp/official-plugins.txt
 
+# Start script of the image: without its options it only runs the start script of the official image,
+# which is not changed. The options rely on the way that script starts QGIS Server and on the nginx
+# configuration of the official image, which is checked here.
+COPY --chmod=755 docker/start/qfastserver-start.sh /usr/local/bin/
+COPY --chmod=755 docker/start/lib/ /usr/local/lib/qfastserver/
+RUN grep -q '^spawn-fcgi -n .* -- /usr/lib/cgi-bin/qgis_mapserv\.fcgi &$' /usr/local/bin/start-xvfb-nginx.sh \
+ && grep -q '^QGIS_PID=\$(waitfor qgis_mapserv\.fcgi)$' /usr/local/bin/start-xvfb-nginx.sh \
+ && grep -q '^wait \$QGIS_PID$' /usr/local/bin/start-xvfb-nginx.sh \
+ && grep -q 'include /etc/nginx/qgis\.d/\*\.conf;' /etc/nginx/nginx.conf \
+ || { echo "the start script or the nginx configuration of the base image changed: review docker/start"; exit 1; }
+CMD /usr/local/bin/qfastserver-start.sh
+
 LABEL org.opencontainers.image.title="QFastServer" \
       org.opencontainers.image.description="QGIS Server ${QGIS_VERSION} with the QFastServer patch series ${SERIES}" \
       org.opencontainers.image.licenses="GPL-2.0-or-later" \

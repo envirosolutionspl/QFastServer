@@ -1,0 +1,23 @@
+#!/bin/bash
+# Supervisor of the QGIS Server processes, started by spawn-fcgi with the FastCGI socket as
+# standard input and with the user, the directory and the environment of the official image.
+#
+# It starts QFASTSERVER_WORKERS processes which accept the requests on that socket. When one of
+# them ends, the others are stopped and the supervisor ends: the container then stops, as it
+# does when the single process of the official image ends.
+
+# the workers get the commands of the system
+PATH=${PATH#/usr/local/lib/qfastserver:}
+
+# a command started in the background would get /dev/null as standard input
+exec 3<&0
+trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM INT
+for ((i = 0; i < QFASTSERVER_WORKERS; i++)); do
+    /usr/lib/cgi-bin/qgis_mapserv.fcgi <&3 3<&- &
+done
+exec 3<&-
+
+wait -n
+status=$?
+kill $(jobs -p) 2>/dev/null
+exit "$status"

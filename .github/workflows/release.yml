@@ -70,8 +70,27 @@ jobs:
             sleep 2
           done
           docker logs qfastserver 2>&1 | tail -20
+          # one process by default, as the official image
+          processes=$(docker exec qfastserver pidof qgis_mapserv.fcgi | wc -w)
           docker rm -f qfastserver
           test -n "$answer"
+          test "$processes" = 1
+
+      - name: Start the image with its options
+        run: |
+          docker run -d --name qfastserver -p 8080:80 -e QFASTSERVER_WORKERS=3 -e QFASTSERVER_GZIP=true "qfastserver:$VERSION"
+          answer=
+          for i in $(seq 30); do
+            answer=$(curl -s -m 10 --compressed "http://localhost:8080/ows/?SERVICE=WMS&REQUEST=GetCapabilities" || true)
+            if echo "$answer" | grep -q -E 'Project file error|WMS_Capabilities'; then break; fi
+            answer=
+            sleep 2
+          done
+          docker logs qfastserver 2>&1 | tail -20
+          processes=$(docker exec qfastserver pidof qgis_mapserv.fcgi | wc -w)
+          docker rm -f qfastserver
+          test -n "$answer"
+          test "$processes" = 3
 
       - name: Publish the image
         if: env.TAG != ''

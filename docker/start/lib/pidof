@@ -1,0 +1,8 @@
+#!/bin/bash
+# Called in place of pidof by the start script of the official image when several workers are
+# asked for (see qfastserver-start.sh). That script waits for the process of QGIS Server and
+# stops it at the end: with several workers this process is their supervisor.
+if [ "$*" = qgis_mapserv.fcgi ]; then
+    exec /usr/bin/pidof -x qfastserver-workers
+fi
+exec /usr/bin/pidof "$@"

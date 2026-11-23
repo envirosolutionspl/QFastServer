@@ -9,6 +9,7 @@ PDF after removing the creation date, everything else byte by byte. Exit code 1 
 """
 
 import json
+import os
 import re
 import sys
 import urllib.request
@@ -17,6 +18,8 @@ from xml.etree.ElementTree import canonicalize
 from PyQt5.QtGui import QImage
 
 A, B = sys.argv[1], sys.argv[2]
+# root of the OGC API: wfs3 up to QGIS 3.44, ogcapi from 4.x (wfs3 there answers with an exception)
+OAPI = os.environ.get("OAPI", "wfs3")
 OUT = sys.argv[3] if len(sys.argv) > 3 else None
 
 W = "SERVICE=WMS&VERSION=1.3.0&"
@@ -85,9 +88,9 @@ REQUESTS = {
     "%3CPropertyName%3Eclass%3C/PropertyName%3E%3CLiteral%3Eprimary%3C/Literal%3E%3C/PropertyIsEqualTo%3E%3C/Filter%3E",
     "wfs_property": f"{F}TYPENAME=buildings&MAXFEATURES=100&PROPERTYNAME=id&GEOMETRYNAME=none",
     "wfs_paging": f"{F}TYPENAME=buildings&MAXFEATURES=100&STARTINDEX=1000&OUTPUTFORMAT=application/json",
-    "wfs3_collections": "wfs3/collections.json",
-    "wfs3_items": "wfs3/collections/buildings/items.json?limit=100",
-    "wfs3_items_bbox": "wfs3/collections/roads/items.json?limit=100&bbox=17.9,50.6,18.0,50.7",
+    "wfs3_collections": f"{OAPI}/collections.json",
+    "wfs3_items": f"{OAPI}/collections/buildings/items.json?limit=100",
+    "wfs3_items_bbox": f"{OAPI}/collections/roads/items.json?limit=100&bbox=17.9,50.6,18.0,50.7",
     "wmts_capabilities": "SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetCapabilities",
     "wmts_tile": "SERVICE=WMTS&VERSION=1.0.0&REQUEST=GetTile&LAYER=buildings&STYLE=default&TILEMATRIXSET=EPSG:3857"
     "&TILEMATRIX=14&TILEROW=5545&TILECOL=9008&FORMAT=image/png",
@@ -100,7 +103,7 @@ REQUESTS = {
 
 def fetch(base, query):
     root = "/".join(base.split("/")[:3]) + "/"
-    url = root + query if query.startswith("wfs3/") else base + "?" + query
+    url = root + query if query.startswith(OAPI + "/") else base + "?" + query
     try:
         with urllib.request.urlopen(url, timeout=300) as r:
             return r.status, r.headers.get("Content-Type", ""), r.read()

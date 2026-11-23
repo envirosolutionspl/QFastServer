@@ -18,7 +18,8 @@ def render(name, path, crs, bbox, size):
     ms = QgsMapSettings(); ms.setLayers([layer]); ms.setDestinationCrs(QgsCoordinateReferenceSystem(crs))
     ext = QgsRectangle(*bbox) if bbox else QgsCoordinateTransform(layer.crs(), QgsCoordinateReferenceSystem(crs), ctx).transformBoundingBox(layer.extent())
     ms.setExtent(ext); ms.setOutputSize(QSize(*size))
-    img = QImage(size[0], size[1], QImage.Format_ARGB32_Premultiplied); img.fill(0)
+    # PyQt6 (QGIS 4) only has the scoped enum
+    img = QImage(size[0], size[1], getattr(QImage, "Format", QImage).Format_ARGB32_Premultiplied); img.fill(0)
     p = QPainter(img); QgsMapRendererCustomPainterJob(ms, p).renderSynchronously(); p.end()
     ptr = img.constBits(); ptr.setsize(img.sizeInBytes())
     print("render   %-34s %-10s %4dx%-4d %s" % (name, crs, size[0], size[1], h(ptr)))

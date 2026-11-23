@@ -12,3 +12,6 @@ They run inside a container with the Python bindings of the build under test. `e
 both servers to serve the same project with PostGIS layers, two rasters, a cascaded WMS layer, published WFS,
 WCS and WMTS and one print layout; `equiv_raster.py` uses the test data of the QGIS source tree. The stack
 which provides the project, the data and the load tests is not published yet.
+
+QGIS 4.x serves the OGC API under `/ogcapi/` only (`/wfs3/` answers with an exception there): run
+`equiv_services.py` with `OAPI=ogcapi` for the 4.x series. `equiv_raster.py` works with PyQt 5 and PyQt 6.

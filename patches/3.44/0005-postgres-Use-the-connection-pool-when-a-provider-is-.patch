@@ -1,4 +1,4 @@
-From fade6df95ed8392da07566be5322c7634973501c Mon Sep 17 00:00:00 2001
+From 3637c49389d18fd348d3becf446447ed7725dea7 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:56:28 +0100
 Subject: [PATCH 05/15] [postgres] Use the connection pool when a provider is

@@ -1,4 +1,4 @@
-From f1a9d90164a835763c515ab37a54f1e50f647829 Mon Sep 17 00:00:00 2001
+From 1b7c2ac0bdbd170edfe5b7463665297180c19de0 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:06:45 +0100
 Subject: [PATCH 01/15] [server] Apply the project cache size setting to the

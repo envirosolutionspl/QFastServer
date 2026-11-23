@@ -1,4 +1,4 @@
-From b6b8e15fad4029f21647da24beae81a5a79be05d Mon Sep 17 00:00:00 2001
+From 592adfa8623dfa4a5f53e2c5651ce860f3447c8f Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:06:45 +0100
 Subject: [PATCH 02/15] [server] Restore the opacity of vector tile layers

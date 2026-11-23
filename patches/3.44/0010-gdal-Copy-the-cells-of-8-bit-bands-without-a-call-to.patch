@@ -1,4 +1,4 @@
-From e91c7f4781c2001fc7ee5d3a50fea848e98644f2 Mon Sep 17 00:00:00 2001
+From be40c2a42defa5f31377e212e030dea20f3a515e Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 14:04:23 +0100
 Subject: [PATCH 10/15] [gdal] Copy the cells of 8-bit bands without a call to

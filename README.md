@@ -21,15 +21,15 @@ Use the row of the QGIS Server version you run today.
 
 | QGIS Server | Values for the build | Patch series | State |
 | --- | --- | --- | --- |
-| 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 15 patches | released: [3.44.15-qfs.2](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.2) |
+| 3.44.16 (LTR) | [versions/3.44.16.env](versions/3.44.16.env) | [3.44](patches/3.44), 15 patches | released: [3.44.16-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.16-qfs.1) |
+| 3.44.15 | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 15 patches | released: [3.44.15-qfs.2](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.2) |
 | 4.4.0 | [versions/4.4.0.env](versions/4.4.0.env) | [4.4](patches/4.4), 15 patches | released: [4.4.0-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/4.4.0-qfs.1) |
 | any other version | — | — | not supported |
 
-Notes for 3.44.15: the image is built from the upstream tag `final-3_44_15` with the patches applied; the
-upstream test suites were run with the same patches on the branch `release-3_44` 28 commits after that tag
-(see [SOURCE](patches/3.44/SOURCE)). Notes for 4.4.0: built from `final-4_4_0`, on which the upstream tests
-were run as well ([SOURCE](patches/4.4/SOURCE)); 4.4 is built with Qt 6. What was verified for a release is in
-its notes.
+Each image is built from the upstream tag of its version with the patches applied. The upstream tests were
+run on the patched tags `final-3_44_16` and `final-4_4_0` ([SOURCE](patches/3.44/SOURCE),
+[SOURCE](patches/4.4/SOURCE)); for 3.44.15 they were run on the branch `release-3_44` 28 commits after its tag.
+4.4 is built with Qt 6. What was verified for a release is in its notes.
 
 A release is named `<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server release it
 is built from and compatible with, then the number of the QFastServer release for it. The notes of every
@@ -45,9 +45,9 @@ How the compatibility is checked:
   ([tests/equivalence](tests/equivalence));
 - 68 raster renderings (reprojected and not, inside and across the raster extent) give the same pixels.
 
-Five of the 59 requests give different responses from one process to the next in upstream itself (8 bits PNG,
-GetContext, DXF, PDF, a cascaded WMS layer as PNG), so they cannot be compared between builds. For 8 bits PNG
-the equality is tested at the function level instead.
+Some of the 59 requests give different responses from one process to the next in upstream itself (8 bits PNG,
+GetContext, DXF, PDF, DescribeFeatureType, a cascaded WMS layer as PNG and as JPEG), so they cannot be
+compared between builds. For 8 bits PNG the equality is tested at the function level instead.
 
 ## Installation
 

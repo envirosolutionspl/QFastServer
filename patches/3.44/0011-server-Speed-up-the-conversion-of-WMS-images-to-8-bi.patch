@@ -1,4 +1,4 @@
-From b28a832fefaaefbeb2ad0dfd51731edaee38c8cd Mon Sep 17 00:00:00 2001
+From cd053df4d6330acbd106eac8f7490a75edfa9984 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 14:04:23 +0100
 Subject: [PATCH 11/15] [server] Speed up the conversion of WMS images to 8

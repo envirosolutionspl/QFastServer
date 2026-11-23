@@ -1,4 +1,4 @@
-From 71c998a3e25a138a7ba4c6eea61d95d41fe3f7be Mon Sep 17 00:00:00 2001
+From 3dcabc1a7894661b2f2de84be7706040437a6e90 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:40:38 +0100
 Subject: [PATCH 04/15] [server] Write 32 bits PNG images with libpng, without

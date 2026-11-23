@@ -1,4 +1,4 @@
-From a0c982f1a42ab9f74d36510aa694710a85baf18f Mon Sep 17 00:00:00 2001
+From a829ba9b74a7d0497a583713a9bf982bbd96a1e1 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:27:31 +0100
 Subject: [PATCH 03/15] [server] Do not delay short FCGI requests in the socket

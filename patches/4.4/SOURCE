@@ -1,0 +1,5 @@
+upstream: https://github.com/qgis/QGIS
+base: 07cadf6f102c52615dc1e9d66c024da370365889 (final-4_4_0)
+branch: fast-server-4_4
+head: 999ee148970d3e8db9f16b66102764a694f47dc3
+tree: 821406f973281896daeb07dbe651a13c8c02ba1b

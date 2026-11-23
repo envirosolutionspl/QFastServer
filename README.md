@@ -1,6 +1,7 @@
 # QFastServer
 
 [![QGIS Server 3.44 LTR](https://img.shields.io/badge/QGIS%20Server-3.44%20LTR-589632)](#compatibility)
+[![QGIS Server 4.4](https://img.shields.io/badge/QGIS%20Server-4.4-589632)](#compatibility)
 [![Release](https://img.shields.io/github/v/release/envirosolutionspl/QFastServer)](https://github.com/envirosolutionspl/QFastServer/releases)
 [![License: GPL v2 or later](https://img.shields.io/badge/license-GPL--2.0--or--later-blue)](LICENSE)
 
@@ -21,12 +22,14 @@ Use the row of the QGIS Server version you run today.
 | QGIS Server | Values for the build | Patch series | State |
 | --- | --- | --- | --- |
 | 3.44.15 (LTR) | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 15 patches | released: [3.44.15-qfs.2](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.2) |
-| 4.x | — | — | not started; the code changed by the patches is still present in upstream `master` |
+| 4.4.0 | [versions/4.4.0.env](versions/4.4.0.env) | [4.4](patches/4.4), 15 patches | released: [4.4.0-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/4.4.0-qfs.1) |
 | any other version | — | — | not supported |
 
 Notes for 3.44.15: the image is built from the upstream tag `final-3_44_15` with the patches applied; the
 upstream test suites were run with the same patches on the branch `release-3_44` 28 commits after that tag
-(see [SOURCE](patches/3.44/SOURCE)). What was verified for a release is in its notes.
+(see [SOURCE](patches/3.44/SOURCE)). Notes for 4.4.0: built from `final-4_4_0`, on which the upstream tests
+were run as well ([SOURCE](patches/4.4/SOURCE)); 4.4 is built with Qt 6. What was verified for a release is in
+its notes.
 
 A release is named `<QGIS Server version>-qfs.<n>`, for example `3.44.15-qfs.1`: the QGIS Server release it
 is built from and compatible with, then the number of the QFastServer release for it. The notes of every
@@ -70,7 +73,7 @@ In an existing deployment only the image name changes:
 ```yaml
 services:
   qgis-server:
-    # image: qgis/qgis-server:<QGIS Server version>-noble
+    # image: qgis/qgis-server:<QGIS Server version>-noble   (4.4: -resolute)
     image: ghcr.io/envirosolutionspl/qfastserver:<QGIS Server version>
 ```
 
@@ -119,10 +122,11 @@ The build compiles QGIS, which takes about an hour and about 1.5 GB of memory fo
 
 ### From source
 
-With the values of your QGIS Server version loaded from its file:
+With the values of your QGIS Server version read from its file:
 
 ```bash
-. versions/<QGIS Server version>.env
+QGIS_TAG=$(sed -n 's/^QGIS_TAG=//p' versions/<QGIS Server version>.env)
+SERIES=$(sed -n 's/^SERIES=//p' versions/<QGIS Server version>.env)
 git clone --branch "$QGIS_TAG" --depth 1 https://github.com/qgis/QGIS
 git -C QGIS apply "$PWD"/patches/"$SERIES"/*.patch
 ```

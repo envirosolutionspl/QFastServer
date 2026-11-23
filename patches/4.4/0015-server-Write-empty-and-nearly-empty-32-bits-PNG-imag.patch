@@ -1,0 +1,157 @@
+From 999ee148970d3e8db9f16b66102764a694f47dc3 Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Tue, 17 Nov 2026 09:45:18 +0100
+Subject: [PATCH 15/15] [server] Write empty and nearly empty 32 bits PNG
+ images with the run-length deflate strategy
+
+With the low deflate level used for 32 bits PNG images, long runs of equal bytes take several times more room than with the default level: an empty transparent 1920x1080 image is written in 36 kB, where the PNG writer of Qt gives 8 kB. Maps of a single layer are often empty or nearly empty.
+
+Images in which at most one pixel out of 200 breaks a run of equal bytes are now deflated with the run-length strategy of zlib, which stores such runs compactly and is as fast. One row out of 8 is examined, and the search stops as soon as the limit is passed. All other images are written as before, since the strategy makes them larger. The decoded pixels do not change.
+
+Size of the file written for 1920x1080 transparent images, time of the PNG encoding alone: empty 36314 -> 8130 bytes (10.0 -> 10.4 ms); points with labels 37495 -> 9444 bytes; a few roads 46835 -> 16707 bytes. In 64 rendered maps of points, lines, polygons and filled areas, the 15 images under the limit became 41 to 78 % smaller and the others are unchanged.
+
+diff --git a/src/server/services/wms/qgswmsutils.cpp b/src/server/services/wms/qgswmsutils.cpp
+index d6f72e053f..e5b31f45b3 100644
+--- a/src/server/services/wms/qgswmsutils.cpp
++++ b/src/server/services/wms/qgswmsutils.cpp
+@@ -34,6 +34,7 @@
+ 
+ #include <algorithm>
+ #include <png.h>
++#include <zlib.h>
+ 
+ using namespace Qt::StringLiterals;
+ 
+@@ -78,6 +79,39 @@ namespace
+     return flat * 3 < total ? PNG_FILTER_UP : PNG_FILTER_NONE;
+   }
+ 
++  /**
++   * Returns TRUE if a 32 bits \a image is almost only made of runs of equal bytes, which
++   * is the case of an empty or nearly empty map, transparent or on a white or grey background.
++   *
++   * With a low deflate level such runs take several times more room than needed, unless
++   * the run-length strategy of zlib is used. That strategy gives larger files for any
++   * other content. One row out of 8 is examined.
++   */
++  bool pngMostlyRuns( const QImage &image, bool hasAlpha )
++  {
++    const int width = image.width();
++    const int height = image.height();
++    // the bytes written for a pixel: all of them, or the colors only
++    const QRgb mask = hasAlpha ? 0xffffffffu : 0x00ffffffu;
++    const QRgb ones = hasAlpha ? 0x01010101u : 0x00010101u;
++    // with more than one pixel out of 200 breaking a run, the default strategy does as well
++    const qint64 maxBreaks = static_cast<qint64>( width ) * ( ( height + 7 ) / 8 ) / 200;
++    qint64 breaks = 0;
++    for ( int y = 0; y < height; y += 8 )
++    {
++      const QRgb *row = reinterpret_cast<const QRgb *>( image.constScanLine( y ) );
++      for ( int x = 0; x < width; ++x )
++      {
++        const QRgb pixel = row[x] & mask;
++        if ( pixel != ( pixel & 0xff ) * ones || ( x > 0 && pixel != ( row[x - 1] & mask ) ) )
++          ++breaks;
++      }
++      if ( breaks > maxBreaks )
++        return false;
++    }
++    return true;
++  }
++
+   /**
+    * Writes a 32 bits \a image as PNG to \a device, with a single row filter and
+    * a low deflate level.
+@@ -131,6 +165,8 @@ namespace
+ 
+     png_set_write_fn( png, device, pngWriteCallback, pngFlushCallback );
+     png_set_compression_level( png, 2 );
++    if ( rowFilter == PNG_FILTER_NONE && pngMostlyRuns( image, hasAlpha ) )
++      png_set_compression_strategy( png, Z_RLE );
+     png_set_filter( png, PNG_FILTER_TYPE_BASE, rowFilter );
+     png_set_IHDR( png, info, static_cast<png_uint_32>( image.width() ), static_cast<png_uint_32>( image.height() ), 8, hasAlpha ? PNG_COLOR_TYPE_RGB_ALPHA : PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT );
+     if ( image.dotsPerMeterX() > 0 || image.dotsPerMeterY() > 0 )
+diff --git a/tests/src/server/wms/test_qgsserver_wms_utils.cpp b/tests/src/server/wms/test_qgsserver_wms_utils.cpp
+index f51758c25b..a3f881d764 100644
+--- a/tests/src/server/wms/test_qgsserver_wms_utils.cpp
++++ b/tests/src/server/wms/test_qgsserver_wms_utils.cpp
+@@ -57,14 +57,20 @@ void TestQgsServerWmsUtils::writeImage_png_data()
+   QTest::addColumn<int>( "width" );
+   QTest::addColumn<int>( "height" );
+   QTest::addColumn<bool>( "continuousTone" );
++  QTest::addColumn<int>( "shapes" );
++  QTest::addColumn<int>( "maximumSize" );
+ 
+-  QTest::newRow( "opaque" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157 << false;
+-  QTest::newRow( "alpha" ) << static_cast<int>( QImage::Format_ARGB32 ) << 301 << 157 << false;
+-  QTest::newRow( "premultiplied alpha" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157 << false;
+-  QTest::newRow( "one pixel" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1 << 1 << false;
++  QTest::newRow( "opaque" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157 << false << 3 << 0;
++  QTest::newRow( "alpha" ) << static_cast<int>( QImage::Format_ARGB32 ) << 301 << 157 << false << 3 << 0;
++  QTest::newRow( "premultiplied alpha" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157 << false << 3 << 0;
++  QTest::newRow( "one pixel" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1 << 1 << false << 3 << 0;
+   // images without flat areas are written with another row filter
+-  QTest::newRow( "opaque continuous tone" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157 << true;
+-  QTest::newRow( "premultiplied alpha continuous tone" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157 << true;
++  QTest::newRow( "opaque continuous tone" ) << static_cast<int>( QImage::Format_RGB32 ) << 301 << 157 << true << 3 << 0;
++  QTest::newRow( "premultiplied alpha continuous tone" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 301 << 157 << true << 3 << 0;
++  // empty and nearly empty images are written with another deflate strategy, which keeps them small
++  QTest::newRow( "opaque empty" ) << static_cast<int>( QImage::Format_RGB32 ) << 1920 << 1080 << false << 0 << 10000;
++  QTest::newRow( "premultiplied alpha empty" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1920 << 1080 << false << 0 << 10000;
++  QTest::newRow( "premultiplied alpha nearly empty" ) << static_cast<int>( QImage::Format_ARGB32_Premultiplied ) << 1920 << 1080 << false << 1 << 40000;
+ }
+ 
+ void TestQgsServerWmsUtils::writeImage_png()
+@@ -73,8 +79,11 @@ void TestQgsServerWmsUtils::writeImage_png()
+   QFETCH( int, width );
+   QFETCH( int, height );
+   QFETCH( bool, continuousTone );
++  QFETCH( int, shapes );
++  QFETCH( int, maximumSize );
+ 
+-  // an image with flat areas, gradients, antialiased edges and partial transparency
++  // an image with flat areas, gradients, antialiased edges and partial transparency,
++  // or with a line only, or with nothing
+   QImage image( width, height, static_cast<QImage::Format>( format ) );
+   image.fill( QColor( 255, 255, 255, 0 ) );
+   if ( continuousTone )
+@@ -86,17 +95,24 @@ void TestQgsServerWmsUtils::writeImage_png()
+         image.setPixelColor( x, y, QColor( ( x * 7 + y * 3 ) % 256, ( x * 5 + y * 11 ) % 256, ( x * 13 + y ) % 256, 255 - ( x + y ) % 100 ) );
+     }
+   }
++  if ( shapes > 0 )
+   {
+     QPainter painter( &image );
+     painter.setRenderHint( QPainter::Antialiasing );
+-    QLinearGradient gradient( 0, 0, width, height );
+-    gradient.setColorAt( 0, QColor( 200, 30, 40, 255 ) );
+-    gradient.setColorAt( 1, QColor( 20, 90, 220, 60 ) );
+-    painter.fillRect( QRectF( 0, 0, width / 2.0, height ), gradient );
++    if ( shapes > 1 )
++    {
++      QLinearGradient gradient( 0, 0, width, height );
++      gradient.setColorAt( 0, QColor( 200, 30, 40, 255 ) );
++      gradient.setColorAt( 1, QColor( 20, 90, 220, 60 ) );
++      painter.fillRect( QRectF( 0, 0, width / 2.0, height ), gradient );
++    }
+     painter.setPen( QPen( QColor( 10, 120, 30, 180 ), 2.5 ) );
+     painter.drawLine( QPointF( 0.3, 0.7 ), QPointF( width - 0.4, height - 1.2 ) );
+-    painter.setBrush( QColor( 250, 200, 0, 128 ) );
+-    painter.drawEllipse( QRectF( width / 3.0, height / 4.0, width / 2.0, height / 2.0 ) );
++    if ( shapes > 1 )
++    {
++      painter.setBrush( QColor( 250, 200, 0, 128 ) );
++      painter.drawEllipse( QRectF( width / 3.0, height / 4.0, width / 2.0, height / 2.0 ) );
++    }
+   }
+   image.setDotsPerMeterX( 3780 );
+   image.setDotsPerMeterY( 3543 );
+@@ -109,6 +125,8 @@ void TestQgsServerWmsUtils::writeImage_png()
+   response.flush();
+   const QByteArray data = response.body();
+   QVERIFY( data.startsWith( "\x89PNG" ) );
++  if ( maximumSize > 0 )
++    QVERIFY2( data.size() < maximumSize, qPrintable( QStringLiteral( "%1 bytes" ).arg( data.size() ) ) );
+   const QImage decoded = QImage::fromData( data, "PNG" );
+   QVERIFY( !decoded.isNull() );
+ 

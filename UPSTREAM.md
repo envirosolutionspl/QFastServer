@@ -38,6 +38,17 @@ Branch `fast-server-3_44` of <https://github.com/envirosolutionspl/QGIS>.
 "Applies cleanly" and "applies by hand" describe a trial application of the commit to upstream `master`
 (`53943cb164`); nothing was built on `master`.
 
+## Series 4.4
+
+Branch `fast-server-4_4` of <https://github.com/envirosolutionspl/QGIS>, on the tag `final-4_4_0`. The same 15
+patches with the same subjects, ported to QGIS 4.4 (Qt 6). Differences from the 3.44 series:
+
+- 0014 (DXF) was rewritten: QGIS 4.4 writes DXF files through a text codec, so the group codes are kept
+  encoded, and formatted again when the codec changes.
+- 0013 only acts with Qt 5. With Qt 6 it changes nothing; it is kept in the series for now.
+- The other patches only had conflicts with the formatting changes of upstream (`u""_s` strings, include
+  order) and keep their logic.
+
 ## Measured, not implemented
 
 Candidates found by profiling every request type of the server, with the share of the request time they

@@ -1,0 +1,64 @@
+From dfb3c5b92d0e3f6e43048747dd8b0354cc7be239 Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 11 Nov 2026 14:05:09 +0100
+Subject: [PATCH 12/15] [server] Get the features of a JSON GetFeatureInfo with
+ a single request
+
+The JSON output of GetFeatureInfo fetched every feature again with its
+own request, which is a round trip to the data source for every feature
+of the response. The features of a layer are now fetched with one request
+and the single requests are kept for the features it does not return.
+
+With a local PostGIS database a response with four features of three
+layers is returned in 2.8 ms instead of 4.6 ms (1.9 ms as text/xml).
+
+diff --git a/src/server/services/wms/qgswmsrenderer.cpp b/src/server/services/wms/qgswmsrenderer.cpp
+index 754243f52b..f4137dce9a 100644
+--- a/src/server/services/wms/qgswmsrenderer.cpp
++++ b/src/server/services/wms/qgswmsrenderer.cpp
+@@ -3088,13 +3088,44 @@ namespace QgsWms
+         QMap<QgsFeatureId, QString> fidMap;
+         QMap<QgsFeatureId, QString> fidDisplayNameMap;
+ 
++        // Get the features with a single request: a request for every feature is a round trip
++        // to the data source for every feature
++        QHash<QString, QgsFeature> featuresByServerFid;
++        if ( featuresNode.size() > 1 )
++        {
++          const QgsVectorDataProvider *provider = static_cast<QgsVectorDataProvider *>( layer->dataProvider() );
++          const QgsAttributeList pkAttributes = provider->pkAttributeIndexes();
++          QStringList serverFids;
++          for ( int j = 0; j < featuresNode.size(); ++j )
++          {
++            serverFids << featuresNode.at( j ).toElement().attribute( QStringLiteral( "id" ) );
++          }
++          QgsFeatureRequest request;
++          QgsServerFeatureId::updateFeatureRequestFromServerFids( request, serverFids, provider );
++          // as in the requests for a single feature below
++          if ( !pkAttributes.isEmpty() )
++            request.setFlags( Qgis::FeatureRequestFlag::NoGeometry );
++          QgsFeature fetchedFeature;
++          QgsFeatureIterator it = vl->getFeatures( request );
++          while ( it.nextFeature( fetchedFeature ) )
++          {
++            const QString serverFid = QgsServerFeatureId::getServerFid( fetchedFeature, pkAttributes );
++            if ( !featuresByServerFid.contains( serverFid ) )
++              featuresByServerFid.insert( serverFid, fetchedFeature );
++          }
++        }
++
+         for ( int j = 0; j < featuresNode.size(); ++j )
+         {
+           const QDomElement featureNode = featuresNode.at( j ).toElement();
+           const QString fid = featureNode.attribute( u"id"_s );
+           QgsFeature feature;
+           const QString expression { QgsServerFeatureId::getExpressionFromServerFid( fid, static_cast<QgsVectorDataProvider *>( layer->dataProvider() ) ) };
+-          if ( expression.isEmpty() )
++          if ( featuresByServerFid.contains( fid ) )
++          {
++            feature = featuresByServerFid.value( fid );
++          }
++          else if ( expression.isEmpty() )
+           {
+             feature = vl->getFeature( fid.toLongLong() );
+           }

@@ -108,6 +108,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          . "versions/$VERSION.env"
+          # not sourced: some values of the file contain spaces
+          SERIES=$(sed -n 's/^SERIES=//p' "versions/$VERSION.env")
           tar -czf "qfastserver-$TAG-patches.tar.gz" "patches/$SERIES" "versions/$VERSION.env"
           gh release create "$TAG" --title "QFastServer $TAG" --notes-file "releases/$TAG.md" "qfastserver-$TAG-patches.tar.gz"

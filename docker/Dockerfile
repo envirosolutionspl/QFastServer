@@ -10,6 +10,7 @@
 #     --build-arg QGIS_VERSION=3.44.15 --build-arg QGIS_TAG=final-3_44_15 --build-arg SERIES=3.44 \
 #     --build-arg BUILD_IMAGE=qgis/qgis3-build-deps-24.04-qt5:release-3_44 \
 #     --build-arg BASE_IMAGE=qgis/qgis-server:3.44.15-noble \
+#     --build-arg SERIES_CMAKE_OPTIONS="-DBINDINGS_GLOBAL_INSTALL=TRUE -DSIP_GLOBAL_INSTALL=TRUE -DQT_PLUGINS_DIR=lib/x86_64-linux-gnu/qt5/plugins" \
 #     -t qfastserver:3.44.15 .
 
 ARG BUILD_IMAGE
@@ -20,6 +21,15 @@ ARG QGIS_TAG
 ARG SERIES
 # parallel compiler jobs; each one may need about 1.5 GB of memory
 ARG JOBS=8
+# per upstream line (versions/*.env): packages missing from the build image, and the options of
+# debian/rules which differ between the lines (Qt version, bundled libraries, Python layout)
+ARG BUILD_PACKAGES=
+ARG SERIES_CMAKE_OPTIONS=
+
+RUN if [ -n "$BUILD_PACKAGES" ]; then \
+      apt-get update -qq && apt-get install -y -qq --no-install-recommends $BUILD_PACKAGES \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 ADD https://github.com/qgis/QGIS/archive/refs/tags/${QGIS_TAG}.tar.gz /tmp/qgis.tar.gz
 RUN mkdir /src && tar -xzf /tmp/qgis.tar.gz -C /src --strip-components=1 && rm /tmp/qgis.tar.gz
@@ -38,11 +48,9 @@ RUN FLAGS="-O2 -fstack-protector-strong -fstack-clash-protection -Wformat -Werro
       -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-Bsymbolic-functions -Wl,-z,relro" \
       -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-Bsymbolic-functions -Wl,-z,relro" \
       -DCMAKE_INSTALL_PREFIX=/usr \
-      -DBINDINGS_GLOBAL_INSTALL=TRUE \
-      -DSIP_GLOBAL_INSTALL=TRUE \
       -DSERVER_SKIP_ECW=TRUE \
       -DQGIS_CGIBIN_SUBDIR=/usr/lib/cgi-bin \
-      -DQT_PLUGINS_DIR=lib/x86_64-linux-gnu/qt5/plugins \
+      ${SERIES_CMAKE_OPTIONS} \
       -DWITH_CUSTOM_WIDGETS=TRUE \
       -DWITH_SERVER=TRUE \
       -DWITH_SERVER_PLUGINS=TRUE \
@@ -77,7 +85,7 @@ RUN ldconfig \
  && missing=$(comm -23 /tmp/official-plugins.txt /qfastserver-plugins.txt) \
  && if [ -n "$missing" ]; then echo "not replaced: $missing"; exit 1; fi \
  && if ldd /usr/lib/cgi-bin/qgis_mapserv.fcgi /usr/lib/libqgis_*.so.* $(find /usr/lib/qgis -name '*.so') | grep 'not found'; then exit 1; fi \
- && python3 -c "from qgis.core import Qgis; import qgis.server, qgis.analysis; print('QGIS', Qgis.QGIS_VERSION)" \
+ && PYTHONPATH=/usr/share/qgis/python python3 -c "from qgis.core import Qgis; import qgis.server, qgis.analysis; print('QGIS', Qgis.QGIS_VERSION)" \
  && rm /tmp/official-plugins.txt
 
 # Start script of the image: without its options it only runs the start script of the official image,

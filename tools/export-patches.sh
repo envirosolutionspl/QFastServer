@@ -22,7 +22,7 @@ git -C "$FORK" format-patch --quiet --no-signature --no-stat -o "$OUT" "$BASE..$
 (cd "$OUT" && ls -- *.patch >series)
 {
   echo "upstream: https://github.com/qgis/QGIS"
-  echo "base: $(git -C "$FORK" rev-parse "$BASE^{commit}") ($(git -C "$FORK" describe --tags "$BASE"))"
+  echo "base: $(git -C "$FORK" rev-parse "$BASE^{commit}") ($(git -C "$FORK" describe --tags --match 'final-*' "$BASE"))"
   echo "branch: $BRANCH"
   echo "head: $(git -C "$FORK" rev-parse "$BRANCH^{commit}")"
   echo "tree: $(git -C "$FORK" rev-parse "$BRANCH^{tree}")"

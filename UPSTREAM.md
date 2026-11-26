@@ -41,11 +41,14 @@ Branch `fast-server-3_44` of <https://github.com/envirosolutionspl/QGIS>.
 ## Series 4.4
 
 Branch `fast-server-4_4` of <https://github.com/envirosolutionspl/QGIS>, on the tag `final-4_4_0`. The same 15
-patches with the same subjects, ported to QGIS 4.4 (Qt 6). Differences from the 3.44 series:
+patches with the same subjects, ported to QGIS 4.4 (Qt 6), and patch 0016. Differences from the 3.44 series:
 
 - 0014 (DXF) was rewritten: QGIS 4.4 writes DXF files through a text codec, so the group codes are kept
   encoded, and formatted again when the codec changes.
 - 0013 only acts with Qt 5. With Qt 6 it changes nothing; it is kept in the series for now.
+- 0016 exists in this series only: Qt reads `QT_NO_GUI_THREADPOOL` when its GUI thread pool is first used,
+  which in `qgis_mapserv` is after `FCGI_Accept()` has replaced the environment; the patch uses the pool once
+  before the FastCGI loop when the variable is set. Qt 5 has no such pool.
 - The other patches only had conflicts with the formatting changes of upstream (`u""_s` strings, include
   order) and keep their logic.
 

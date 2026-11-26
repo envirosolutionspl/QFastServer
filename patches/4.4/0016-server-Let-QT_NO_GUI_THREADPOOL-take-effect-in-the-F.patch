@@ -1,0 +1,47 @@
+From d49fbeeab473cba701fecb489170f68d233cbb8c Mon Sep 17 00:00:00 2001
+From: Michal Wloga <michal.wloga@envirosolutions.pl>
+Date: Wed, 25 Nov 2026 19:11:35 +0100
+Subject: [PATCH 16/16] [server] Let QT_NO_GUI_THREADPOOL take effect in the
+ FastCGI server
+
+Qt 6 splits large span fills of QPainter into tasks for its GUI thread
+pool. In a server that runs several FastCGI processes side by side, each
+print page then costs about a thousand thread switches, and GetPrint PNG
+is slower than with QGIS 3.44 and Qt 5.
+
+Qt turns the pool off when QT_NO_GUI_THREADPOOL is set, but it reads the
+variable only when the pool is first used. In qgis_mapserv that happens
+during the first request, after FCGI_Accept() has replaced the process
+environment with the request parameters, so the variable is never seen.
+
+When the variable is set, use the pool once before the FastCGI loop. The
+images are the same: without the pool each fill runs once over all spans.
+Without the variable nothing changes.
+
+diff --git a/src/server/qgis_map_serv.cpp b/src/server/qgis_map_serv.cpp
+index ce9ff0c637..3719045ed6 100644
+--- a/src/server/qgis_map_serv.cpp
++++ b/src/server/qgis_map_serv.cpp
+@@ -30,6 +30,7 @@
+ #include "qgssettingsentry.h"
+ 
+ #include <QFontDatabase>
++#include <QImage>
+ #include <QString>
+ 
+ #include <fcgi_stdio.h>
+@@ -97,6 +98,14 @@ int main( int argc, char *argv[] )
+   QFontDatabase fontDB;
+ #endif
+ 
++  // Qt reads QT_NO_GUI_THREADPOOL when its GUI thread pool is first used, which would be during the first
++  // request, after fcgi_accept() has replaced the environment: use it once now so that the variable is seen
++  // (this conversion goes through the generic converter, which asks for the pool whatever the image size).
++  if ( qEnvironmentVariableIsSet( "QT_NO_GUI_THREADPOOL" ) )
++  {
++    QImage( 1, 1, QImage::Format_ARGB32 ).convertToFormat( QImage::Format_RGB16 );
++  }
++
+   // Starts FCGI loop
+   while ( fcgi_accept() >= 0 )
+   {

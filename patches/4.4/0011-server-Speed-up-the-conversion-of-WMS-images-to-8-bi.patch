@@ -1,7 +1,7 @@
 From cb2d3a13509ced82d10de6c0c57a4c883d81045e Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 14:04:23 +0100
-Subject: [PATCH 11/15] [server] Speed up the conversion of WMS images to 8
+Subject: [PATCH 11/16] [server] Speed up the conversion of WMS images to 8
  bits PNG
 
 - The closest color of the color table is searched with the distances to

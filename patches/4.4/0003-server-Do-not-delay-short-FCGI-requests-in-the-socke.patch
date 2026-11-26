@@ -1,7 +1,7 @@
 From c1402ee97918b91310f083c6bc9131059d6e3f90 Mon Sep 17 00:00:00 2001
 From: Michal Wloga <michal.wloga@envirosolutions.pl>
 Date: Wed, 11 Nov 2026 09:27:31 +0100
-Subject: [PATCH 03/15] [server] Do not delay short FCGI requests in the socket
+Subject: [PATCH 03/16] [server] Do not delay short FCGI requests in the socket
  monitoring thread
 
 The socket monitoring thread started every request with a select() call using a 10 ms timeout, and the response destructor joins the thread. Any request faster than 10 ms was therefore held until the timeout expired, which also capped a worker at about 100 requests per second.

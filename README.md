@@ -23,7 +23,7 @@ Use the row of the QGIS Server version you run today.
 | --- | --- | --- | --- |
 | 3.44.16 (LTR) | [versions/3.44.16.env](versions/3.44.16.env) | [3.44](patches/3.44), 15 patches | released: [3.44.16-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.16-qfs.1) |
 | 3.44.15 | [versions/3.44.15.env](versions/3.44.15.env) | [3.44](patches/3.44), 15 patches | released: [3.44.15-qfs.2](https://github.com/envirosolutionspl/QFastServer/releases/tag/3.44.15-qfs.2) |
-| 4.4.0 | [versions/4.4.0.env](versions/4.4.0.env) | [4.4](patches/4.4), 15 patches | released: [4.4.0-qfs.1](https://github.com/envirosolutionspl/QFastServer/releases/tag/4.4.0-qfs.1) |
+| 4.4.0 | [versions/4.4.0.env](versions/4.4.0.env) | [4.4](patches/4.4), 16 patches | released: [4.4.0-qfs.2](https://github.com/envirosolutionspl/QFastServer/releases/tag/4.4.0-qfs.2) |
 | any other version | — | — | not supported |
 
 Each image is built from the upstream tag of its version with the patches applied. The upstream tests were
@@ -97,6 +97,16 @@ with a single process. `QGIS_SERVER_MAX_THREADS` is the number of rendering thre
 In a container with 4 CPUs, 16 maps of 1920x1080 pixels requested at once were all answered after 0.79 s with
 one process and after 0.28 s with `QFASTSERVER_WORKERS=4`.
 
+With QGIS 4.4 (Qt 6) one more setting helps when several processes or containers share the CPUs: the variable
+`QT_NO_GUI_THREADPOOL` of Qt. Qt 6 splits large fills of the map and print rendering into tasks for a pool of
+threads in every process; with several processes that is mostly switching between threads. Set to any value,
+even `0`, it turns the pool off (do not set it to keep the pool); the images are the same. The official image
+does not pass it to QGIS Server, this one does (patch 0016 of the 4.4 series), and it is not set by default.
+With 4 processes and 16 clients it gave 40% more GetPrint PNG per second, and GetPrint PNG with one client
+took 74 ms instead of 90 ms; GetLegendGraphic PNG was 5 to 15% slower (under 0.5 ms), the other requests did
+not change measurably ([4.4.0-qfs.2](releases/4.4.0-qfs.2.md)). A single large print on a machine with idle
+CPUs can be slower without the pool (not measured).
+
 Like the official image, this one declares no health check. A request to `/ows/` without parameters is
 answered by QGIS Server itself with HTTP 200, so it can be used to check that the server answers and not only
 nginx. With one process the check waits behind the request being rendered: allow for that in the timeout.
@@ -149,6 +159,7 @@ available in the development fork, <https://github.com/envirosolutionspl/QGIS>, 
 | WFS GetFeature (GML) | The features are written without converting every character to check its encoding |
 | DXF export | The group codes are formatted once |
 | Fixes | The project cache size setting is applied; the opacity of vector tile layers is restored after a request |
+| Qt 6 thread pool (optional, 4.4) | `QT_NO_GUI_THREADPOOL` takes effect in the FastCGI server: see [Options of the image](#options-of-the-image) |
 | Image (optional) | Several QGIS Server processes in one container, gzip for the text responses: see [Options of the image](#options-of-the-image) |
 
 Every patch is one commit with a test, written to the upstream coding standards. The list is in

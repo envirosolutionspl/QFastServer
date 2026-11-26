@@ -13,3 +13,4 @@
 0013-server-Do-not-convert-every-character-to-check-its-e.patch
 0014-dxf-Format-each-group-code-once.patch
 0015-server-Write-empty-and-nearly-empty-32-bits-PNG-imag.patch
+0016-server-Let-QT_NO_GUI_THREADPOOL-take-effect-in-the-F.patch
